@@ -6,6 +6,15 @@ import reportWebVitals from './reportWebVitals';
 import { AuthProvider } from '../src/components/AuthContext';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
+
+// Global error listeners to surface uncaught exceptions and avoid silent crashes
+window.addEventListener('error', (event) => {
+  console.error('Global error:', event.error || event.message, event);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled rejection:', event.reason);
+});
+
 root.render(
   <React.StrictMode>
      <AuthProvider>

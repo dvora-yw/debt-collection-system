@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { Input } from './Input';
 import { Select } from './Select';
@@ -7,6 +8,7 @@ import { Tabs } from './Tabs';
 import { ArrowRight, Save, UserPlus, Building, CreditCard } from 'lucide-react';
 
 export function AdminAddClient() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     // Personal Info
     firstName: '',
@@ -229,7 +231,7 @@ export function AdminAddClient() {
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <button className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4 transition-colors">
+          <button type="button" onClick={() => navigate('/admin-dashboard')} className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-4 transition-colors">
             <ArrowRight className="w-5 h-5" />
             חזרה לדשבורד
           </button>

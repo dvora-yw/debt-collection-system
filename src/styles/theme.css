@@ -15,7 +15,7 @@
     --radius: 0.5rem;
   }
 }
-@custom-variant dark (&:is(.dark *));
+/* removed invalid @custom-variant copied from design */
 
 :root {
   --font-size: 16px;
@@ -110,7 +110,7 @@
   --sidebar-ring: #3b82f6;
 }
 
-@theme inline {
+:root {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -152,62 +152,24 @@
 }
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
+  :root {
+    --background: 222 84% 5%;        /* ← זה הצבע הכהה שרצית */
+    --foreground: 210 40% 98%;
 
-  body {
-    @apply bg-background text-foreground;
-  }
+    --card: 222 84% 7%;
+    --card-foreground: 210 40% 98%;
 
-  /**
-  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
-  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
-  */
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
 
-  html {
-    font-size: var(--font-size);
-  }
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
 
-  h1 {
-    font-size: var(--text-2xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
+    --muted: 222 84% 10%;
+    --muted-foreground: 215.4 16.3% 65%;
 
-  h2 {
-    font-size: var(--text-xl);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  h3 {
-    font-size: var(--text-lg);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  h4 {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  label {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  button {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-medium);
-    line-height: 1.5;
-  }
-
-  input {
-    font-size: var(--text-base);
-    font-weight: var(--font-weight-normal);
-    line-height: 1.5;
+    --border: 222 84% 12%;
+    --input: 222 84% 12%;
+    --radius: 0.75rem;
   }
 }

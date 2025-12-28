@@ -72,14 +72,14 @@ export default function LoginScreen() {
 
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input
+               {/*  <input
                   type="checkbox"
                   checked={remember}
                   onChange={(e) => setRemember(e.target.checked)} // חיבור ה-State לאלמנט
                   className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
                 />
-                <span className="text-foreground">זכור אותי</span>
-              </label>
+                <span className="text-foreground">זכור אותי</span>*/}
+              </label> 
               <button type="button" onClick={() => navigate('/forgot-password')} className="text-primary hover:underline bg-transparent border-none cursor-pointer">
                 שכחתי סיסמה
               </button>
@@ -90,14 +90,14 @@ export default function LoginScreen() {
             </Button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-border text-center">
+          {/* <div className="mt-6 pt-6 border-t border-border text-center">
             <p className="text-sm text-muted-foreground">
               אין לך חשבון?{' '}
               <button type="button" onClick={() => navigate('/register')} className="text-primary hover:underline bg-transparent border-none cursor-pointer">
                 צור חשבון חדש
               </button>
             </p>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
