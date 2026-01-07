@@ -17,7 +17,7 @@ import { Input } from './Input';
 
 
 
-export function DocumentsView({ clientName = 'חברת ABC בע"מ' }) {
+export default function DocumentsView({ clientName = 'חברת ABC בע"מ' }) {
   const [searchTerm, setSearchTerm] = useState('');
 
   const documents = [

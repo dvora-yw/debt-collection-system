@@ -6,7 +6,7 @@ import { Button } from './Button';
 import { Input } from './Input';
 import { Select } from './Select';
 import { useNavigate } from 'react-router-dom';
-import { getCompanies } from '../services/companyService';
+// import { getCompanies } from '../services/companyService';
 import { Table,TableHeader,TableBody,TableRow,TableHead,TableCell,} from './Table';
 import {Search,Download,Plus,Eye,Edit,Trash2,Building,Mail,Phone,FileText,} from 'lucide-react';
 
@@ -26,12 +26,12 @@ export function ClientsTable({ onViewClient, onAddClient, visibleColumns = ['all
     let mounted = true;
     const load = async () => {
       try {
-        const [clientsRes, companiesRes] = await Promise.all([getClients(), getCompanies()]);
+        const [clientsRes] = await Promise.all([getClients()]);
         if (!mounted) return;
         const clientsData = clientsRes?.data ?? [];
-        const companiesData = companiesRes?.data ?? [];
+        // const companiesData = companiesRes?.data ?? [];
         const map = {};
-        companiesData.forEach(c => { map[String(c.id)] = c; });
+        // companiesData.forEach(c => { map[String(c.id)] = c; });
         setClients(clientsData);
         setCompaniesMap(map);
       } catch (e) {
@@ -64,8 +64,7 @@ export function ClientsTable({ onViewClient, onAddClient, visibleColumns = ['all
       (client.name || '').toLowerCase().includes(q) ||
       (client.contactPerson || '').toLowerCase().includes(q) ||
       (client.email || '').toLowerCase().includes(q) ||
-      (client.phone || '').toLowerCase().includes(q) ||
-      (client.companyId || '').toLowerCase().includes(q);
+      (client.phone || '').toLowerCase().includes(q) ;
     const matchesStatus = statusFilter === 'all' || client.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -126,7 +125,6 @@ export function ClientsTable({ onViewClient, onAddClient, visibleColumns = ['all
                 contactPerson: c.contactPerson,
                 email: c.email,
                 phone: c.phone,
-                companyId: c.companyId,
                 creditLimit: c.creditLimit,
                 debt: c.debt,
                 status: c.status,
@@ -155,7 +153,7 @@ export function ClientsTable({ onViewClient, onAddClient, visibleColumns = ['all
                 {isColumnVisible('contactPerson') && <TableHead>איש קשר</TableHead>}
                 {isColumnVisible('email') && <TableHead>אימייל</TableHead>}
                 {isColumnVisible('phone') && <TableHead>טלפון</TableHead>}
-                {isColumnVisible('companyId') && <TableHead>ח.פ / ע.מ</TableHead>}
+                {/* {isColumnVisible('companyId') && <TableHead>ח.פ / ע.מ</TableHead>} */}
                 {isColumnVisible('creditLimit') && <TableHead>מסגרת</TableHead>}
                 {isColumnVisible('debt') && <TableHead>חוב</TableHead>}
                 <TableHead>סטטוס</TableHead>
@@ -175,7 +173,7 @@ export function ClientsTable({ onViewClient, onAddClient, visibleColumns = ['all
                       </div>
                       <div>
                         {/* Prefer company name (lookup by companyId/company_id) otherwise fall back to client.name */}
-                        {(() => {
+                        {/* {(() => {
                           const compId = client.companyId ?? client.company_id ?? (client.company && client.company.id);
                           const compName = companiesMap[String(compId)]?.name;                          
                           if (compName) {
@@ -188,7 +186,7 @@ export function ClientsTable({ onViewClient, onAddClient, visibleColumns = ['all
                             );
                           }
                           return <p className="font-medium">{client.name}</p>;
-                        })()}
+                        })()} */}
 
                         {/* <p className="text-xs text-muted-foreground">#{client.id}</p> */}
                       </div>
@@ -265,7 +263,7 @@ export function ClientsTable({ onViewClient, onAddClient, visibleColumns = ['all
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => onViewClient?.(client.id)}
+                        onClick={() => navigate(`/client-view/${client.id}`)}
                       >
                         <Eye className="w-4 h-4" />
                       </Button>

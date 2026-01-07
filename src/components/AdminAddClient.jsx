@@ -5,226 +5,343 @@ import { Input } from './Input';
 import { Select } from './Select';
 import { Button } from './Button';
 import { Tabs } from './Tabs';
-import { ArrowRight, Save, UserPlus, Building, CreditCard } from 'lucide-react';
+import { ArrowRight, Save, UserPlus, Building, CreditCard, Trash2, Plus } from 'lucide-react';
+import { createClient, createContactsForClient } from '../services/clientService';
 
 export function AdminAddClient() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    // Personal Info
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    idNumber: '',
-    
-    // Company Info
-    companyName: '',
-    companyId: '',
-    companyType: 'ltd',
-    address: '',
-    city: '',
-    zipCode: '',
-    
-    // Payment Info
-    creditLimit: '',
-    paymentTerms: '30',
-    accountNumber: '',
-    bankName: '',
-    branchNumber: '',
+    client: {
+      name: "",
+      entityType: "",
+      identificationNumber: "",
+      address: "",
+      phone: "",
+      email: "",
+      fax: "",
+      establishedDate: "",
+      notes: "",
+      vatNumber: "",
+      paymentModel: "",
+      paymentTerms: "",
+    },
+    contacts: [
+      { firstName: "", lastName: "", role: "", phone: "", email: "" }
+    ]
   });
 
-  const handleInputChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [apiError, setApiError] = useState(null);
+
+  const handleClientChange = (field, value) => {
+    setFormData((prev) => ({ ...prev, client: { ...prev.client, [field]: value } }));
   };
 
-  const handleSubmit = (e) => {
+  const handleContactChange = (index, field, value) => {
+    setFormData((prev) => {
+      const contacts = [...prev.contacts];
+      contacts[index] = { ...contacts[index], [field]: value };
+      return { ...prev, contacts };
+    });
+  };
+
+  const addContact = () => {
+    setFormData((prev) => ({ ...prev, contacts: [...prev.contacts, { firstName: "", lastName: "", role: "", phone: "", email: "" }] }));
+  };
+
+  const removeContact = (index) => {
+    setFormData((prev) => ({ ...prev, contacts: prev.contacts.filter((_, i) => i !== index) }));
+  };
+
+  const entityTypeConfig = [
+    { value: '', label: 'בחר סוג ישות', requiresVat: false },
+    { value: 'EXEMPT_DEALER', label: 'עוסק פטור', requiresVat: false },
+    { value: 'AUTHORIZED_DEALER', label: 'עוסק מורשה', requiresVat: true },
+    { value: 'PRIVATE_COMPANY', label: 'חברה פרטית (ח"פ)', requiresVat: true },
+    { value: 'PUBLIC_COMPANY', label: 'חברה ציבורית', requiresVat: true },
+    { value: 'REGISTERED_PARTNERSHIP', label: 'שותפות רשומה', requiresVat: true },
+    { value: 'LIMITED_PARTNERSHIP', label: 'שותפות מוגבלת', requiresVat: true },
+    { value: 'NON_PROFIT', label: 'עמותה / מלכ"ר', requiresVat: false },
+    { value: 'COOPERATIVE', label: 'אגודה שיתופית', requiresVat: false },
+    { value: 'FOREIGN_COMPANY', label: 'חברה זרה', requiresVat: true },
+    { value: 'PRIVATE_PERSON', label: 'אדם פרטי', requiresVat: false },
+  ];
+
+const getEntityConfig = (type) => {
+  const cfg = entityTypeConfig.find((e) => e.value === type);
+  return cfg || { value: '', label: 'בחר סוג ישות', requiresVat: false };
+};
+  const validate = () => {
+    const e = {};
+    const c = formData.client;
+    if (!c.name || !c.name.trim()) e.name = 'שם הלקוח חובה';
+    if (!c.identificationNumber || !String(c.identificationNumber).trim()) e.identificationNumber = 'מספר זיהוי חובה';
+
+  
+    const cfg2 = entityTypeConfig.find(e => e.value === c.entityType);
+    if (cfg2?.requiresVat && (!c.vatNumber || !String(c.vatNumber).trim())) {
+          e.vatNumber = 'ח.פ / ע.מ חובה עבור ישות זו';
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted:', formData);
-    alert('הלקוח נוסף בהצלחה!');
+    setApiError(null);
+    if (!validate()) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      // Filter out empty contacts (no firstName, lastName, role, phone, or email)
+      const validContacts = (formData.contacts || []).filter((c) => {
+        const fields = [c.firstName, c.lastName, c.role, c.phone, c.email];
+        return fields.some((v) => v && String(v).trim());
+      });
+
+      const payload = {
+        name: formData.client.name,
+        entityType: formData.client.entityType,
+        identificationNumber: formData.client.identificationNumber,
+        address: formData.client.address,
+        phone: formData.client.phone,
+        email: formData.client.email,
+        fax: formData.client.fax,
+        notes: formData.client.notes,
+        establishedDate: formData.client.establishedDate,
+        vatNumber: formData.client.vatNumber,
+        paymentModel: formData.client.paymentModel,
+        paymentTerms: formData.client.paymentTerms,
+        // Only send non-empty contacts to server
+        contacts: validContacts,
+      };
+      
+      console.log('=== CREATING CLIENT ===');
+      console.log('Payload:', payload);
+      console.log('User from localStorage:', localStorage.getItem('user'));
+      
+      const res = await createClient(payload);
+      console.log('=== CREATE CLIENT RESPONSE ===');
+      console.log('Response status:', res.status);
+      console.log('Response data:', res.data);
+
+      if (res.status === 200 || res.status === 201) {
+        alert('הלקוח נוסף בהצלחה');
+        navigate('/clients');
+      } else {
+        setApiError('תגובה לא צפויה מהשרת: ' + res.status);
+      }
+    } catch (err) {
+      console.error('=== CREATE CLIENT ERROR ===');
+      console.error('Full error:', err);
+      console.error('Error response status:', err.response?.status);
+      console.error('Error response data:', err.response?.data);
+      console.error('Error message:', err.message);
+      
+      if (err.response?.status === 401) {
+        setApiError('אין הרשאה - יש להתחבר מחדש');
+      } else if (err.response?.status === 403) {
+        setApiError('אין הרשאה ליצור לקוחות');
+      } else if (err.response?.status === 400) {
+        setApiError('בדיקת קלט נכשלה: ' + (err.response?.data?.message || 'נתונים לא תקינים'));
+      } else if (err.response?.status === 500) {
+        const errorMsg = err.response?.data?.message || err.message || '';
+        if (errorMsg.includes('duplicate key') || errorMsg.includes('Duplicate entry') || errorMsg.includes('UQ_Clients_Identification')) {
+          setApiError('לקוח עם מספר זיהוי זה וסוג ישות זו כבר קיים במערכת');
+        } else {
+          setApiError('שגיאת שרת: ' + (err.response?.data?.message || 'נסה שוב מאוחר יותר'));
+        }
+      } else if (err.response?.data?.message) {
+        setApiError('שגיאה: ' + err.response.data.message);
+      } else {
+        setApiError('שגיאה ביצירת הלקוח: ' + (err.message || 'שגיאה לא ידועה'));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+
+
   };
 
-  const personalInfoTab = (
+  const clientDetailsTab = (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
         <Input
-          label="שם פרטי"
-          placeholder="הזן שם פרטי"
-          value={formData.firstName}
-          onChange={(e) => handleInputChange('firstName', e.target.value)}
+          label="שם לקוח / חברה"
+          placeholder="שם החברה או הלקוח"
+          value={formData.client.name}
+          onChange={(e) => handleClientChange('name', e.target.value)}
+          error={errors.name}
+          required
+        />
+
+        <Select
+          label="סוג ישות"
+          options={entityTypeConfig}
+          value={formData.client.entityType}
+          onChange={(e) => handleClientChange('entityType', e.target.value)}
+          required
+        />
+
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+   
+        <Input
+          label={
+            entityTypeConfig[formData.client.entityType]?.idLabel || 'מספר זיהוי'
+          }
+          value={formData.client.identificationNumber}
+          onChange={(e) =>
+            handleClientChange('identificationNumber', e.target.value)
+          }
           required
         />
         <Input
-          label="שם משפחה"
-          placeholder="הזן שם משפחה"
-          value={formData.lastName}
-          onChange={(e) => handleInputChange('lastName', e.target.value)}
-          required
+          label="תאריך הקמה"
+          type="date"
+          value={formData.client.establishedDate}
+          onChange={(e) => handleClientChange('establishedDate', e.target.value)}
         />
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Input
-          type="email"
-          label="אימייל"
-          placeholder="example@domain.com"
-          value={formData.email}
-          onChange={(e) => handleInputChange('email', e.target.value)}
-          required
-        />
-        <Input
-          type="tel"
           label="טלפון"
           placeholder="050-1234567"
-          value={formData.phone}
-          onChange={(e) => handleInputChange('phone', e.target.value)}
-          required
+          value={formData.client.phone}
+          onChange={(e) => handleClientChange('phone', e.target.value)}
+        />
+        <Input
+          label="אימייל"
+          placeholder="example@domain.com"
+          value={formData.client.email}
+          onChange={(e) => handleClientChange('email', e.target.value)}
         />
       </div>
-      
-      <Input
-        label="תעודת זהות"
-        placeholder="123456789"
-        value={formData.idNumber}
-        onChange={(e) => handleInputChange('idNumber', e.target.value)}
-        required
-      />
-      
-      <div className="flex items-center gap-2 p-4 bg-secondary/10 border-r-4 border-secondary rounded-xl">
-        <UserPlus className="w-5 h-5 text-secondary" />
-        <p className="text-sm">פרטי איש קשר ראשי עבור הלקוח</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Input
+          label="פקס"
+          placeholder="03-1234567"
+          value={formData.client.fax}
+          onChange={(e) => handleClientChange('fax', e.target.value)}
+        />
+        <Input
+          label="כתובת"
+          placeholder="רחוב, מספר, עיר"
+          value={formData.client.address}
+          onChange={(e) => handleClientChange('address', e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {entityTypeConfig.find(e => e.value === formData.client.entityType)?.requiresVat && (
+          <Input
+            label="ח.פ / ע.מ"
+            value={formData.client.vatNumber}
+            onChange={(e) => handleClientChange('vatNumber', e.target.value)}
+            required
+          />
+        )}
+ 
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+      </div>
+
+      <div>
+        <label className="block mb-2 text-foreground">הערות</label>
+        <textarea
+          className="w-full px-4 py-2.5 bg-input-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+          rows={4}
+          value={formData.client.notes}
+          onChange={(e) => handleClientChange('notes', e.target.value)}
+        />
       </div>
     </div>
   );
 
-  const companyInfoTab = (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Input
-          label="שם החברה"
-          placeholder="חברת ABC בע״מ"
-          value={formData.companyName}
-          onChange={(e) => handleInputChange('companyName', e.target.value)}
-          required
-        />
-        <Input
-          label="ח.ר / ע.מ"
-          placeholder="123456789"
-          value={formData.companyId}
-          onChange={(e) => handleInputChange('companyId', e.target.value)}
-          required
-        />
-      </div>
-      
-      <Select
-        label="סוג תאגיד"
-        options={[
-          { value: 'ltd', label: 'בע״מ' },
-          { value: 'llc', label: 'שותפות' },
-          { value: 'sole', label: 'עוסק מורשה' },
-          { value: 'npo', label: 'עמותה' },
-        ]}
-        value={formData.companyType}
-        onChange={(e) => handleInputChange('companyType', e.target.value)}
-      />
-      
-      <Input
-        label="כתובת"
-        placeholder="רחוב 123"
-        value={formData.address}
-        onChange={(e) => handleInputChange('address', e.target.value)}
-        required
-      />
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Input
-          label="עיר"
-          placeholder="תל אביב"
-          value={formData.city}
-          onChange={(e) => handleInputChange('city', e.target.value)}
-          required
-        />
-        <Input
-          label="מיקוד"
-          placeholder="1234567"
-          value={formData.zipCode}
-          onChange={(e) => handleInputChange('zipCode', e.target.value)}
-        />
-      </div>
-      
-      <div className="flex items-center gap-2 p-4 bg-primary/10 border-r-4 border-primary rounded-xl">
-        <Building className="w-5 h-5 text-primary" />
-        <p className="text-sm">פרטי החברה ישמשו לצורך הפקת חשבוניות ומסמכים</p>
-      </div>
+  const contactsTab = (
+    <div className="space-y-4">
+      {formData.contacts.map((c, idx) => (
+        <div key={idx} className="p-4 bg-background border border-border rounded-xl">
+          <div className="flex items-start gap-6">
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Input label="שם פרטי" value={c.firstName} onChange={(e) => handleContactChange(idx, 'firstName', e.target.value)} />
+              <Input label="שם משפחה" value={c.lastName} onChange={(e) => handleContactChange(idx, 'lastName', e.target.value)} />
+              <Input label="תפקיד" value={c.role} onChange={(e) => handleContactChange(idx, 'role', e.target.value)} />
+              <Input label="טלפון" value={c.phone} onChange={(e) => handleContactChange(idx, 'phone', e.target.value)} />
+              <Input label="אימייל" value={c.email} onChange={(e) => handleContactChange(idx, 'email', e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button variant="danger" size="sm" onClick={() => removeContact(idx)}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <Button variant="outline" size="md" onClick={addContact}>
+        <Plus className="w-4 h-4" />
+        הוסף איש קשר
+      </Button>
     </div>
   );
 
-  const paymentInfoTab = (
+  const paymentTab = (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Input
-          label="מסגרת אשראי"
-          placeholder="50000"
-          type="number"
-          value={formData.creditLimit}
-          onChange={(e) => handleInputChange('creditLimit', e.target.value)}
-          required
+        <Select
+          label="מודל תשלום"
+          options={[
+            { value: '', label: 'בחר מודל' },
+            { value: 'invoice', label: 'חשבונית' },
+            { value: 'subscription', label: 'מנוי' },
+            { value: 'installments', label: 'תשלומים' },
+          ]}
+          value={formData.client.paymentModel}
+          onChange={(e) => handleClientChange('paymentModel', e.target.value)}
         />
         <Select
           label="תנאי תשלום"
           options={[
-            { value: '0', label: 'תשלום מיידי' },
+            { value: '', label: 'בחר תנאי' },
+            { value: 'immediate', label: 'תשלום מיידי' },
             { value: '30', label: 'שוטף + 30' },
             { value: '60', label: 'שוטף + 60' },
-            { value: '90', label: 'שוטף + 90' },
           ]}
-          value={formData.paymentTerms}
-          onChange={(e) => handleInputChange('paymentTerms', e.target.value)}
+          value={formData.client.paymentTerms}
+          onChange={(e) => handleClientChange('paymentTerms', e.target.value)}
         />
-      </div>
-      
-      <div className="p-6 bg-muted/30 rounded-xl space-y-6">
-        <h4 className="flex items-center gap-2">
-          <CreditCard className="w-5 h-5 text-secondary" />
-          פרטי חשבון בנק
-        </h4>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Input
-            label="שם הבנק"
-            placeholder="בנק הפועלים"
-            value={formData.bankName}
-            onChange={(e) => handleInputChange('bankName', e.target.value)}
-          />
-          <Input
-            label="מספר סניף"
-            placeholder="123"
-            value={formData.branchNumber}
-            onChange={(e) => handleInputChange('branchNumber', e.target.value)}
-          />
-        </div>
-        
-        <Input
-          label="מספר חשבון"
-          placeholder="123456"
-          value={formData.accountNumber}
-          onChange={(e) => handleInputChange('accountNumber', e.target.value)}
-        />
-      </div>
-      
-      <div className="flex items-center gap-2 p-4 bg-[#10b981]/10 border-r-4 border-[#10b981] rounded-xl">
-        <div className="w-5 h-5 rounded-full bg-[#10b981] flex items-center justify-center text-white text-xs">
-          ✓
-        </div>
-        <p className="text-sm">פרטי התשלום מאובטחים ומוצפנים</p>
       </div>
     </div>
   );
 
   const tabs = [
-    { id: 'personal', label: 'פרטים אישיים', content: personalInfoTab },
-    { id: 'company', label: 'פרטי חברה', content: companyInfoTab },
-    { id: 'payment', label: 'פרטי תשלום', content: paymentInfoTab },
+    { id: 'client', label: 'פרטי לקוח', content: clientDetailsTab },
+    { id: 'contacts', label: 'אנשי קשר', content: contactsTab },
+    { id: 'payment', label: 'תשלומים ותנאים', content: paymentTab },
   ];
+
+  const requiredMissing = (() => {
+    const c = formData.client;
+    const cfg = getEntityConfig(c.entityType);
+    
+    return (
+      !c.name ||
+      !c.identificationNumber ||
+      (cfg.requiresVat && (!c.vatNumber || !String(c.vatNumber).trim()))
+    );
+  })();
 
   return (
     <div className="min-h-screen bg-background p-4 lg:p-8" dir="rtl">
@@ -243,14 +360,20 @@ export function AdminAddClient() {
         <Card padding="lg">
           <form onSubmit={handleSubmit}>
             <Tabs tabs={tabs} />
-            
+
+            {apiError && (
+              <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-md">
+                {apiError}
+              </div>
+            )}
+
             {/* Form Actions */}
             <div className="flex flex-col sm:flex-row gap-4 mt-8 pt-6 border-t border-border">
-              <Button type="submit" size="lg" className="flex-1">
+              <Button type="submit" size="lg" className="flex-1" disabled={requiredMissing || submitting}>
                 <Save className="w-5 h-5" />
-                שמור לקוח
+                {submitting ? 'שומר...' : 'שמור לקוח'}
               </Button>
-              <Button type="button" variant="outline" size="lg" className="flex-1">
+              <Button type="button" variant="outline" size="lg" className="flex-1" disabled={submitting} onClick={() => navigate('/clients')}>
                 ביטול
               </Button>
             </div>
@@ -260,7 +383,7 @@ export function AdminAddClient() {
         {/* Help Text */}
         <div className="mt-6 p-4 bg-card rounded-xl border border-border">
           <p className="text-sm text-muted-foreground">
-            💡 <strong>טיפ:</strong> ניתן לערוך את פרטי הלקוח בכל עת מתוך דף הלקוח. 
+            💡 <strong>טיפ:</strong> ניתן לערוך את פרטי הלקוח בכל עת מתוך דף הלקוח.
             מסגרת האשראי והתנאים יכולים להשתנות לפי הצורך.
           </p>
         </div>

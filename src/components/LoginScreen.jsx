@@ -16,23 +16,76 @@ export default function LoginScreen() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      debugger
       const res = await api.post("/auth/login", {
         email,
         password,
         remember
       });
-      console.log("LOGIN RESPONSE:", res.data);
-      const { token, role, emailVerified } = res.data;
+      console.log("=== LOGIN RESPONSE ===");
+      console.log("Full response:", res);
+      console.log("Response data:", res.data);
       
+      if (!res.data) {
+        console.error("No data in response");
+        alert("תגובה ריקה מהשרת");
+        return;
+      }
       
-      navigate("/email-verification");
-     
-      login(res.data);
+      // חלץ נתונים - role ו emailVerified נמצאים בתוך user
+      const userData = res.data.user || res.data;
+      const emailVerified = userData.emailVerified;
+      const token = res.data.token;
+      const role = userData.role;
+      
+      // clientId יכול להיות מ-userData.clientId או מ-userData.client.id
+      const clientId = userData.clientId || userData.client?.id;
+      
+      console.log("emailVerified value:", emailVerified, "type:", typeof emailVerified);
+      console.log("token:", token);
+      console.log("role:", role);
+      console.log("clientId:", clientId);
+      console.log("Full userData:", userData);
+      
+      // אם המייל לא מאומת (emailVerified = false) → עבור לאימות מייל
+      // JWT יחזור רק אחרי אימות המייל
+      if (emailVerified !== true) {
+        console.log("Email NOT verified, navigating to email-verification");
+        // שמור את email זמנית כדי שדף אימות יוכל להשתמש בו
+        sessionStorage.setItem('pendingEmail', userData.email || email);
+        navigate("/email-verification");
+        return;
+      }
+      
+      // רק אם המייל מאומת ויש token, שמור את המשתמש
+      const dataToSave = { ...res.data };
+      login(dataToSave);
+      console.log("Login saved, user stored");
+      
+      // ניווט לפי role
+      if (role === "ADMIN") {
+        console.log("Navigating to admin-dashboard");
+        navigate("/admin-dashboard");
+      } else if (role === "CLIENT") {
+        console.log("Navigating to client-dashboard");
+        navigate("/client-dashboard");
+      } else if (role === "END_CLIENT") {
+        console.log("Navigating to end-customer view");
+        const endClientId = userData.endClientId || userData.endClient?.id;
+        if (endClientId) {
+          navigate(`/end-customer/${endClientId}`);
+        } else {
+          console.error("No endClientId found for END_CLIENT user");
+          navigate("/");
+        }
+      } else {
+        console.log("Unknown role:", role);
+        navigate("/");
+      }
 
     } catch (err) {
-      console.error(err);
-      alert("התחברות נכשלה");
+      console.error("Login error:", err);
+      console.error("Error response:", err.response?.data);
+      alert("התחברות נכשלה: " + (err.response?.data?.message || err.message));
     }
   };
 

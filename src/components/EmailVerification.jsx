@@ -75,35 +75,80 @@ export function EmailVerification({
     const handleVerify = async () => {
         const fullCode = code.join('');
         if (fullCode.length !== 6) return;
-        debugger
-        const res = await api.post('/auth/verify-email', {
-            code: fullCode
-        });
-        login(res.data);
-
-        switch (res.data.role) {
-            case "ADMIN":
-                navigate("/admin-dashboard");
-                break;
-            case "CLIENT":
-                navigate("/client-dashboard");
-                break;
-            default:
-                navigate("/");
+        
+        try {
+            console.log("=== VERIFY EMAIL ===");
+            console.log("Sending code:", fullCode);
+            
+            const res = await api.post('/auth/verify-email', {
+                code: fullCode
+            });
+            
+            console.log("Verify response:", res.data);
+            
+            // שמור את התשובה (שמכילה token JWT)
+            login(res.data);
+            console.log("User saved after email verification");
+            
+            // חלץ role מתוך user
+            const userData = res.data.user || res.data;
+            const role = userData.role;
+            
+            console.log("Role:", role);
+            
+            switch (role) {
+                case "ADMIN":
+                    console.log("Navigating to admin-dashboard");
+                    navigate("/admin-dashboard");
+                    break;
+                case "CLIENT":
+                    console.log("Navigating to client-dashboard");
+                    navigate("/client-dashboard");
+                    break;
+                case "END_CLIENT":
+                    console.log("Navigating to end-customer view");
+                    const endClientId = userData.endClientId || userData.endClient?.id;
+                    if (endClientId) {
+                        navigate(`/end-customer/${endClientId}`);
+                    } else {
+                        console.error("No endClientId found for END_CLIENT");
+                        navigate("/");
+                    }
+                    break;
+                default:
+                    console.log("Unknown role, navigating to home");
+                    navigate("/");
+            }
+        } catch (err) {
+            console.error("Verification error:", err);
+            alert("אימות נכשל: " + (err.response?.data?.message || err.message));
         }
     };
 
     const handleResend = async () => {
-        await api.post('/auth/resend-code', null, {
-            params: {
-                email: user.email
+        try {
+            const pendingEmail = sessionStorage.getItem('pendingEmail');
+            const email = pendingEmail || user?.email;
+            
+            if (!email) {
+                alert("אימייל לא נמצא");
+                return;
             }
-        });
-
-        setTimer(60);
-        setCanResend(false);
-        setCode(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
+            
+            console.log("Resending code to:", email);
+            await api.post('/auth/resend-code', null, {
+                params: {
+                    email: email
+                }
+            });
+            
+            console.log("Code resent successfully");
+            setTimer(60);
+            setCanResend(false);
+        } catch (err) {
+            console.error("Resend error:", err);
+            alert("שליחת קוד נכשלה: " + (err.response?.data?.message || err.message));
+        }
     };
 
     const isComplete = code.every((digit) => digit !== '');
@@ -120,7 +165,9 @@ export function EmailVerification({
                     <p className="text-muted-foreground">
                         שלחנו קוד אימות בן 6 ספרות לכתובת
                     </p>
-                    <p className="text-foreground mt-1 font-medium">{user.email}</p>
+                    <p className="text-foreground mt-1 font-medium">
+                        {user?.email || sessionStorage.getItem('pendingEmail') || 'האימייל שלך'}
+                    </p>
                 </div>
 
                 {/* Verification Card */}

@@ -1,66 +1,63 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { Badge } from './Badge';
 import { Button } from './Button';
+import api from '../services/api';
 import {
+  ArrowRight,
+  User,
   DollarSign,
   Calendar,
-  FileText,
-  Download,
-  CreditCard,
+  Mail,
+  Phone,
   AlertCircle,
   CheckCircle,
   Clock,
+  Users,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 
 export function EndCustomerView() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [endCustomerData, setEndCustomerData] = useState(null);
+  const [persons, setPersons] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch end customer details
+        const endCustomerRes = await api.get(`/end-clients/${id}`);
+        setEndCustomerData(endCustomerRes.data);
+
+        // Fetch persons for this end customer
+        const personsRes = await api.get(`/persons/by-end-client/${id}`);
+        setPersons(personsRes.data || []);
+      } catch (err) {
+        console.error('Error fetching end customer data:', err);
+        setError('שגיאה בטעינת נתונים');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchData();
+    }
+  }, [id]);
+
+  if (loading) return <div className="p-8">טוען נתונים...</div>;
+  if (error) return <div className="p-8 text-red-600">{error}</div>;
+  if (!endCustomerData) return <div className="p-8">אין נתונים</div>;
+
   const customerInfo = {
-    name: 'דוד כהן',
-    accountNumber: 'CUS-2024-001234',
-    email: 'david@example.com',
-    phone: '050-1234567',
+    name: endCustomerData.endClientName || endCustomerData.name,
+    accountNumber: `EC-${endCustomerData.id}`,
   };
-
-  const debtSummary = {
-    totalDebt: 15200,
-    overdueDebt: 8500,
-    currentDebt: 6700,
-    nextPaymentDate: '25/12/2024',
-    daysOverdue: 12,
-  };
-
-  const invoices = [
-    {
-      id: 'INV-001',
-      date: '01/11/2024',
-      dueDate: '01/12/2024',
-      amount: 5200,
-      status: 'overdue',
-      description: 'חשבונית חודשית - נובמבר',
-    },
-    {
-      id: 'INV-002',
-      date: '15/11/2024',
-      dueDate: '15/12/2024',
-      amount: 3300,
-      status: 'overdue',
-      description: 'שירותים נוספים',
-    },
-    {
-      id: 'INV-003',
-      date: '01/12/2024',
-      dueDate: '01/01/2025',
-      amount: 6700,
-      status: 'pending',
-      description: 'חשבונית חודשית - דצמבר',
-    },
-  ];
-
-  const paymentHistory = [
-    { date: '05/11/2024', amount: 4500, method: 'כרטיס אשראי', status: 'completed' },
-    { date: '10/10/2024', amount: 5200, method: 'העברה בנקאית', status: 'completed' },
-    { date: '05/10/2024', amount: 3800, method: 'כרטיס אשראי', status: 'completed' },
-  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-secondary/5 to-background" dir="rtl">
@@ -96,168 +93,90 @@ export function EndCustomerView() {
                 </p>
               </div>
             </div>
-            <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-              <p>📧 {customerInfo.email}</p>
-              <p>📱 {customerInfo.phone}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm">
+                <Edit2 className="w-4 h-4" />
+                עדכן
+              </Button>
             </div>
           </div>
         </Card>
 
-        {/* Debt Summary - Featured Section */}
-        <div className="mb-6">
-          {debtSummary.totalDebt > 0 ? (
-            <Card padding="lg" className="bg-gradient-to-br from-destructive/5 to-[#f59e0b]/5 border-2 border-destructive/20">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-4">
-                    <AlertCircle className="w-8 h-8 text-destructive" />
-                    <div>
-                      <h3 className="text-xl">סיכום חובות</h3>
-                      <p className="text-sm text-muted-foreground">יש לך יתרת חוב פתוחה</p>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-card/50 backdrop-blur-sm rounded-xl p-4">
-                      <p className="text-sm text-muted-foreground mb-1">סך החוב</p>
-                      <p className="text-2xl text-destructive">
-                        ₪{debtSummary.totalDebt.toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="bg-card/50 backdrop-blur-sm rounded-xl p-4">
-                      <p className="text-sm text-muted-foreground mb-1">חוב באיחור</p>
-                      <p className="text-2xl text-destructive">
-                        ₪{debtSummary.overdueDebt.toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="bg-card/50 backdrop-blur-sm rounded-xl p-4">
-                      <p className="text-sm text-muted-foreground mb-1">ימי איחור</p>
-                      <p className="text-2xl text-destructive">
-                        {debtSummary.daysOverdue} ימים
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 p-3 bg-[#f59e0b]/10 border-r-4 border-[#f59e0b] rounded-xl">
-                    <Clock className="w-5 h-5 text-[#f59e0b]" />
-                    <p className="text-sm">
-                      תאריך תשלום הבא: <strong>{debtSummary.nextPaymentDate}</strong>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 lg:w-64">
-                  <Button size="lg" fullWidth>
-                    <CreditCard className="w-5 h-5" />
-                    שלם עכשיו
-                  </Button>
-                  <Button variant="outline" size="lg" fullWidth>
-                    <Calendar className="w-5 h-5" />
-                    תזמן תשלום
-                  </Button>
-                </div>
+        {/* Contacts / PERSON Section */}
+        <Card padding="lg">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-primary" />
+                <CardTitle>אנשי קשר (PERSON)</CardTitle>
               </div>
-            </Card>
-          ) : (
-            <Card padding="lg" className="bg-gradient-to-br from-[#10b981]/5 to-secondary/5 border-2 border-[#10b981]/20">
-              <div className="flex items-center gap-4">
-                <CheckCircle className="w-12 h-12 text-[#10b981]" />
-                <div>
-                  <h3 className="text-xl mb-1">חשבונך מסודר! 🎉</h3>
-                  <p className="text-muted-foreground">אין לך חובות פתוחים כרגע</p>
-                </div>
-              </div>
-            </Card>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Invoices */}
-          <Card padding="lg" className="lg:col-span-2">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>חשבוניות</CardTitle>
-                <Badge variant="primary">{invoices.length} פעילות</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
+              <Badge variant="primary">{persons.length} אנשים</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {persons && persons.length > 0 ? (
               <div className="space-y-3">
-                {invoices.map((invoice) => (
+                {persons.map((person) => (
                   <div
-                    key={invoice.id}
+                    key={person.id}
                     className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 bg-background rounded-xl border border-border hover:border-primary/50 transition-all"
                   >
                     <div className="flex items-start gap-4">
-                      <div
-                        className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                          invoice.status === 'overdue'
-                            ? 'bg-destructive/10 text-destructive'
-                            : 'bg-[#f59e0b]/10 text-[#f59e0b]'
-                        }`}
-                      >
-                        <FileText className="w-6 h-6" />
+                      <div className="w-12 h-12 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+                        <User className="w-6 h-6" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <p>{invoice.id}</p>
-                          <Badge
-                            variant={invoice.status === 'overdue' ? 'danger' : 'warning'}
-                            size="sm"
-                          >
-                            {invoice.status === 'overdue' ? 'באיחור' : 'ממתין'}
-                          </Badge>
+                          <p className="font-semibold">
+                            {person.firstName} {person.lastName}
+                          </p>
+                          {person.role && (
+                            <Badge variant="outline" size="sm">
+                              {person.role}
+                            </Badge>
+                          )}
                         </div>
-                        <p className="text-sm text-muted-foreground mb-1">
-                          {invoice.description}
-                        </p>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>הונפק: {invoice.date}</span>
-                          <span>•</span>
-                          <span>תאריך פירעון: {invoice.dueDate}</span>
+                        <div className="space-y-1">
+                          {person.email && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Mail className="w-4 h-4" />
+                              <span>{person.email}</span>
+                            </div>
+                          )}
+                          {person.phone && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Phone className="w-4 h-4" />
+                              <span>{person.phone}</span>
+                            </div>
+                          )}
+                          {person.address && (
+                            <p className="text-sm text-muted-foreground">{person.address}</p>
+                          )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-left">
-                        <p className="text-xl">₪{invoice.amount.toLocaleString()}</p>
-                      </div>
+                    <div className="flex items-center gap-2">
                       <Button variant="ghost" size="sm">
-                        <Download className="w-4 h-4" />
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                        <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Payment History */}
-          <Card padding="lg">
-            <CardHeader>
-              <CardTitle>היסטוריית תשלומים</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {paymentHistory.map((payment, index) => (
-                  <div
-                    key={index}
-                    className="p-4 bg-background rounded-xl border border-border"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <p>₪{payment.amount.toLocaleString()}</p>
-                      <CheckCircle className="w-5 h-5 text-[#10b981]" />
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">{payment.method}</p>
-                    <p className="text-xs text-muted-foreground">{payment.date}</p>
-                  </div>
-                ))}
-                <Button variant="outline" fullWidth size="sm">
-                  צפה בהיסטוריה המלאה
+            ) : (
+              <div className="text-center py-8">
+                <Users className="w-12 h-12 text-muted-foreground/50 mx-auto mb-2" />
+                <p className="text-muted-foreground">אין אנשי קשר להוספה</p>
+                <Button className="mt-4">
+                  הוסף איש קשר
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
     </div>
   );

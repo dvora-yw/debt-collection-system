@@ -1,130 +1,126 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
-import { Badge } from './Badge';
 import { Button } from './Button';
+import { Badge } from './Badge';
 import { Input } from './Input';
-import { Select } from './Select';
+import { useAuth } from './AuthContext';
+import api from '../services/api';
 import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from './Table';
-import {
-  Search,
-  Filter,
-  Download,
-  Plus,
-  Eye,
   LogOut,
-  Users,
   DollarSign,
+  Plus,
+  Upload,
+  Mail,
+  Phone,
+  Eye,
+  Download,
+  Search,
+  Users,
   Clock,
   CheckCircle,
 } from 'lucide-react';
 
 export function ClientDashboard() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [clientData, setClientData] = useState(null);
+  const [endCustomers, setEndCustomers] = useState([]);
+  const [clientPersons, setClientPersons] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
 
-  const stats = [
-    {
-      title: 'סך לקוחות קצה',
-      value: '156',
-      icon: Users,
-      color: 'text-primary',
-      bgColor: 'bg-primary/10',
-    },
-    {
-      title: 'חובות פתוחים',
-      value: '₪89,450',
-      icon: DollarSign,
-      color: 'text-[#f59e0b]',
-      bgColor: 'bg-[#f59e0b]/10',
-    },
-    {
-      title: 'ממתינים לתשלום',
-      value: '24',
-      icon: Clock,
-      color: 'text-secondary',
-      bgColor: 'bg-secondary/10',
-    },
-    {
-      title: 'שולמו החודש',
-      value: '₪142,300',
-      icon: CheckCircle,
-      color: 'text-[#10b981]',
-      bgColor: 'bg-[#10b981]/10',
-    },
-  ];
+  useEffect(() => {
+    const fetchClientData = async () => {
+      try {
+        console.log("=== FETCHING CLIENT DATA ===");
+        console.log("User:", user);
+        
+        if (!user || !user.user) {
+          setError('משתמש לא מחובר');
+          setLoading(false);
+          return;
+        }
 
-  const customers = [
-    {
-      id: '1',
-      name: 'דוד כהן',
-      email: 'david@example.com',
-      phone: '050-1234567',
-      debt: '₪5,200',
-      status: 'pending',
-      lastPayment: '05/12/2024',
-    },
-    {
-      id: '2',
-      name: 'רחל לוי',
-      email: 'rachel@example.com',
-      phone: '052-9876543',
-      debt: '₪0',
-      status: 'paid',
-      lastPayment: '10/12/2024',
-    },
-    {
-      id: '3',
-      name: 'משה אברהם',
-      email: 'moshe@example.com',
-      phone: '053-5551234',
-      debt: '₪12,800',
-      status: 'overdue',
-      lastPayment: '25/11/2024',
-    },
-    {
-      id: '4',
-      name: 'שרה ישראלי',
-      email: 'sarah@example.com',
-      phone: '054-3334444',
-      debt: '₪3,500',
-      status: 'pending',
-      lastPayment: '08/12/2024',
-    },
-    {
-      id: '5',
-      name: 'יוסף דוד',
-      email: 'yosef@example.com',
-      phone: '050-7778889',
-      debt: '₪0',
-      status: 'paid',
-      lastPayment: '12/12/2024',
-    },
-    {
-      id: '6',
-      name: 'מרים כהן',
-      email: 'miriam@example.com',
-      phone: '052-1112223',
-      debt: '₪8,900',
-      status: 'pending',
-      lastPayment: '03/12/2024',
-    },
-  ];
+        const clientId = user.user.clientId;
+        
+        if (!clientId) {
+          setError('אין clientId ליוזר - בעיה בשרת');
+          setLoading(false);
+          return;
+        }
 
-  const filteredCustomers = customers.filter((customer) => {
-    const matchesSearch =
-      customer.name.includes(searchTerm) ||
-      customer.email.includes(searchTerm) ||
-      customer.phone.includes(searchTerm);
-    const matchesStatus = statusFilter === 'all' || customer.status === statusFilter;
-    return matchesSearch && matchesStatus;
+        // טען את הלקוח לפי clientId
+        const res = await api.get(`/clients/${clientId}`);
+        console.log("Found client:", res.data);
+        setClientData(res.data);
+      } catch (err) {
+        console.error("Error fetching client:", err);
+        setError('שגיאה בטעינת נתונים');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchClientData();
+  }, [user]);
+
+  // Fetch end clients (filter by clientId on frontend because backend lacks query param)
+  useEffect(() => {
+    if (!clientData?.id) return;
+
+    const fetchEndClients = async () => {
+      try {
+        const res = await api.get(`/end-clients/by-client/${clientData.id}`);
+        setEndCustomers(res.data || []);
+      } catch (err) {
+        console.error('Error fetching end clients:', err);
+        setEndCustomers([]);
+      }
+    };
+
+    fetchEndClients();
+  }, [clientData?.id]);
+
+  // Fetch client contacts (not persons - those belong to end clients)
+  useEffect(() => {
+    if (!clientData?.id) return;
+
+    const fetchClientContacts = async () => {
+      try {
+        const res = await api.get(`/client-contacts/contacts/${clientData.id}`);
+        setClientPersons(res.data || []);
+      } catch (err) {
+        console.error('Error fetching client contacts:', err);
+        setClientPersons([]);
+      }
+    };
+
+    fetchClientContacts();
+  }, [clientData?.id]);
+
+  if (loading) return <div className="p-8">טוען נתונים...</div>;
+  if (error) return <div className="p-8 text-red-600">{error}</div>;
+  if (!clientData) return <div className="p-8">אין נתונים</div>;
+
+  // Contacts fetched by clientId
+  const contacts = clientPersons || [];
+
+  // Filter end customers by search
+  const filteredCustomers = endCustomers.filter(endClient => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      endClient.endClientName?.toLowerCase().includes(searchLower) ||
+      endClient.name?.toLowerCase().includes(searchLower)
+    );
   });
+
+  // Calculate stats
+  const totalEndCustomers = endCustomers.length;
+  const totalDebt = endCustomers.reduce((sum, c) => sum + (parseFloat(c.debt) || 0), 0);
+  const pendingPayments = endCustomers.filter(c => c.status !== 'paid').length;
+  const paidThisMonth = endCustomers.filter(c => c.status === 'paid').length;
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -139,22 +135,73 @@ export function ClientDashboard() {
     }
   };
 
+  const entityTypeMap = {
+    EXEMPT_DEALER: { label: 'עוסק פטור', description: 'עוסק שפטור מרישום בחשבונות' },
+    AUTHORIZED_DEALER: { label: 'עוסק מורשה', description: 'עוסק רשום ומורשה בחשבונות' },
+    PRIVATE_COMPANY: { label: 'חברה פרטית (ח"פ)', description: 'חברה פרטית תושבת ישראל' },
+    PUBLIC_COMPANY: { label: 'חברה ציבורית', description: 'חברה ציבורית בישראל' },
+    REGISTERED_PARTNERSHIP: { label: 'שותפות רשומה', description: 'שותפות רשומה בישראל' },
+    LIMITED_PARTNERSHIP: { label: 'שותפות מוגבלת', description: 'שותפות מוגבלת רשומה' },
+    NON_PROFIT: { label: 'עמותה / מלכ"ר', description: 'עמותה או מוסד דת' },
+    COOPERATIVE: { label: 'אגודה שיתופית', description: 'אגודה שיתופית רשומה' },
+    FOREIGN_COMPANY: { label: 'חברה זרה', description: 'חברה חוקית בחו"ל' },
+    PRIVATE_PERSON: { label: 'אדם פרטי', description: 'אדם פרטי תושב ישראל' },
+  };
+
+  const getEntityTypeLabel = (type) => {
+    return entityTypeMap[type]?.label || type;
+  };
+
+  const getEntityTypeDescription = (type) => {
+    return entityTypeMap[type]?.description || '';
+  };
+
   return (
     <div className="min-h-screen bg-background" dir="rtl">
-      {/* Header */}
+      {/* Header with Client Info */}
       <header className="bg-card border-b border-border">
         <div className="px-4 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-12 flex-1 flex-wrap">
+              {/* Icon + Name */}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center flex-shrink-0">
+                  <DollarSign className="w-6 h-6 text-white" />
+                </div>
+                <h1 className="text-2xl font-bold">{clientData.name}</h1>
               </div>
-              <div>
-                <h1 className="text-2xl">לוח בקרה - לקוח</h1>
-                <p className="text-sm text-muted-foreground">חברת ABC בע״מ</p>
+              
+              {/* All other data with labels */}
+              <div className="flex flex-wrap items-center gap-8 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">סוג ישות</p>
+                  <p className="font-medium">{getEntityTypeLabel(clientData.entityType)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">מספר זיהוי</p>
+                  <p className="font-medium">{clientData.identificationNumber}</p>
+                </div>
+                <div className="hidden sm:block">
+                  <p className="text-xs text-muted-foreground mb-0.5">אימייל</p>
+                  <p className="font-medium text-sm">{clientData.email}</p>
+                </div>
+                <div className="hidden md:block">
+                  <p className="text-xs text-muted-foreground mb-0.5">טלפון</p>
+                  <p className="font-medium">{clientData.phone}</p>
+                </div>
+                <div className="hidden lg:block">
+                  <p className="text-xs text-muted-foreground mb-0.5">כתובת</p>
+                  <p className="font-medium text-sm">{clientData.address || 'לא צוין'}</p>
+                </div>
+                <div className="hidden xl:block">
+                  <p className="text-xs text-muted-foreground mb-0.5">ח.פ / ע.מ</p>
+                  <p className="font-medium">{clientData.vatNumber || 'לא צוין'}</p>
+                </div>
               </div>
             </div>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={() => {
+              // TODO: logout
+            }}>
               <LogOut className="w-5 h-5" />
               התנתק
             </Button>
@@ -163,25 +210,63 @@ export function ClientDashboard() {
       </header>
 
       <main className="p-4 lg:p-8">
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => (
-            <Card key={index} padding="md">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">{stat.title}</p>
-                  <h3 className="text-2xl">{stat.value}</h3>
-                </div>
-                <div className={`${stat.bgColor} ${stat.color} p-3 rounded-xl`}>
-                  <stat.icon className="w-6 h-6" />
-                </div>
+        {/* TODO: KPI Cards - להוסיף בחזרה אם נדרש
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <Card padding="md" className="rounded-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">סך לקוחות קצה</p>
+                <h3 className="text-3xl font-bold">{totalEndCustomers}</h3>
               </div>
-            </Card>
-          ))}
-        </div>
+              <div className="bg-blue-100 p-4 rounded-xl">
+                <Users className="w-6 h-6 text-primary" />
+              </div>
+            </div>
+          </Card>
 
-        {/* Customers Table */}
-        <Card padding="lg">
+          <Card padding="md" className="rounded-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">חובות פתוחים</p>
+                <h3 className="text-3xl font-bold">₪{totalDebt.toLocaleString('he-IL')}</h3>
+              </div>
+              <div className="bg-yellow-100 p-4 rounded-xl">
+                <DollarSign className="w-6 h-6 text-yellow-600" />
+              </div>
+            </div>
+          </Card>
+
+          <Card padding="md" className="rounded-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">ממתינים לתשלום</p>
+                <h3 className="text-3xl font-bold">{pendingPayments}</h3>
+              </div>
+              <div className="bg-blue-100 p-4 rounded-xl">
+                <Clock className="w-6 h-6 text-secondary" />
+              </div>
+            </div>
+          </Card>
+
+          <Card padding="md" className="rounded-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">שולמו החודש</p>
+                <h3 className="text-3xl font-bold">{paidThisMonth}</h3>
+              </div>
+              <div className="bg-green-100 p-4 rounded-xl">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              </div>
+            </div>
+          </Card>
+        </div>
+        */}
+
+        {/* Main Content Grid: End Customers (main) + Contacts (sidebar) */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+          {/* End Customers Section - Main Content (3/4 width) */}
+          <div className="lg:col-span-3">
+            <Card padding="lg" className="rounded-2xl">
           <CardHeader>
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <CardTitle>לקוחות קצה</CardTitle>
@@ -189,99 +274,107 @@ export function ClientDashboard() {
                 <div className="relative flex-1 sm:w-64">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <Input
-                    placeholder="חיפוש לפי שם, אימייל או טלפון"
+                    placeholder="חיפוש לקוח..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pr-10"
                   />
                 </div>
-                <Select
-                  options={[
-                    { value: 'all', label: 'כל הסטטוסים' },
-                    { value: 'paid', label: 'שולם' },
-                    { value: 'pending', label: 'ממתין' },
-                    { value: 'overdue', label: 'באיחור' },
-                  ]}
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="sm:w-40"
-                />
                 <Button variant="outline" size="md">
                   <Download className="w-5 h-5" />
                   ייצא
                 </Button>
-                <Button variant="primary" size="md">
+                <Button variant="primary" size="md" onClick={() => navigate('/add-end-customer')}>
                   <Plus className="w-5 h-5" />
-                  הוסף לקוח
+                  הוסף לקוח קצה
                 </Button>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>שם</TableHead>
-                  <TableHead>אימייל</TableHead>
-                  <TableHead>טלפון</TableHead>
-                  <TableHead>חוב</TableHead>
-                  <TableHead>סטטוס</TableHead>
-                  <TableHead>תשלום אחרון</TableHead>
-                  <TableHead>פעולות</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCustomers.map((customer) => (
-                  <TableRow key={customer.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center text-white text-sm">
-                          {customer.name.charAt(0)}
-                        </div>
-                        {customer.name}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {customer.email}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {customer.phone}
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={
-                          customer.debt === '₪0'
-                            ? 'text-[#10b981]'
-                            : customer.status === 'overdue'
-                            ? 'text-destructive'
-                            : ''
-                        }
-                      >
-                        {customer.debt}
-                      </span>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(customer.status)}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {customer.lastPayment}
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
 
-            {filteredCustomers.length === 0 && (
-              <div className="text-center py-12">
-                <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">לא נמצאו לקוחות התואמים לחיפוש</p>
-              </div>
-            )}
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">שם לקוח קצה</th>
+                    <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">סטטוס</th>
+                    <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">פעולות</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCustomers.length > 0 ? (
+                    filteredCustomers.map((endClient, index) => (
+                      <tr key={endClient.id || index} className="border-b border-border hover:bg-muted/50 transition-colors">
+                        <td className="py-4 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center text-white text-sm font-medium">
+                              {(endClient.endClientName || endClient.name || '?').charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-medium">{endClient.endClientName || endClient.name}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <Badge variant="success">פעיל</Badge>
+                        </td>
+                        <td className="py-4 px-4">
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => navigate(`/end-customer/${endClient.id}`)}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="3" className="py-12 text-center text-muted-foreground">
+                        {endCustomers.length === 0 ? 'אין לקוחות קצה' : 'לא נמצאו התאמות לחיפוש'}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
-        </Card>
+            </Card>
+          </div>
+
+          {/* Contacts Sidebar (1/4 width) */}
+          <div className="lg:col-span-1">
+            <Card padding="lg" className="rounded-2xl">
+              <CardHeader>
+                <CardTitle className="text-lg">אנשי קשר</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {contacts.length > 0 ? (
+                  <div className="space-y-3">
+                    {contacts.map((contact, index) => (
+                      <div key={index} className="p-3 bg-muted/30 rounded-lg border border-border">
+                        <div className="grid gap-1">
+                          <p className="font-medium text-sm">{contact.firstName} {contact.lastName}</p>
+                          <p className="text-xs text-muted-foreground">{contact.role || 'לא צוין'}</p>
+                          {contact.phone && (
+                            <p className="text-xs text-muted-foreground">{contact.phone}</p>
+                          )}
+                          {contact.email && (
+                            <p className="text-xs text-muted-foreground truncate">{contact.email}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground text-sm py-4">אין אנשי קשר</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </main>
     </div>
   );
