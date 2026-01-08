@@ -53,47 +53,23 @@ export function ClientView() {
   if (error) return <div className="p-8 text-red-600">{error}</div>;
   if (!clientData) return <div className="p-8">לא נמצאו נתונים</div>;
 
-  const stats = [
-    {
-      title: 'חוב נוכחי',
-      value: clientData.debt,
-      icon: DollarSign,
-      color: 'text-[#f59e0b]',
-      bgColor: 'bg-[#f59e0b]/10',
-    },
-    {
-      title: 'מסגרת אשראי',
-      value: clientData.creditLimit,
-      icon: CreditCard,
-      color: 'text-primary',
-      bgColor: 'bg-primary/10',
-    },
-    {
-      title: 'תשלום אחרון',
-      value: clientData.lastPayment,
-      icon: Calendar,
-      color: 'text-secondary',
-      bgColor: 'bg-secondary/10',
-    },
-    {
-      title: 'ניצול מסגרת',
-      value: '25.3%',
-      icon: TrendingUp,
-      color: 'text-[#10b981]',
-      bgColor: 'bg-[#10b981]/10',
-    },
-  ];
+  const getEntityTypeLabel = (entityType) => {
+    const labels = {
+      COMPANY: 'חברה',
+      PRIVATE_PERSON: 'אדם פרטי',
+      BUSINESS: 'עוסק',
+      NONPROFIT: 'עמותה',
+      OTHER: 'אחר'
+    };
+    return labels[entityType] || entityType;
+  };
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'active':
-        return <Badge variant="success">פעיל</Badge>;
-      case 'warning':
-        return <Badge variant="warning">אזהרה</Badge>;
-      case 'blocked':
-        return <Badge variant="danger">חסום</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '-';
+    try {
+      return new Date(dateStr).toLocaleDateString('he-IL');
+    } catch {
+      return dateStr;
     }
   };
 
@@ -112,12 +88,12 @@ export function ClientView() {
               <div>
                 <div className="flex items-center gap-3 mb-2">
                   <h1 className="text-3xl">{clientData.name}</h1>
-                  {getStatusBadge(clientData.status || 'active')}
+                  <Badge variant="default">{getEntityTypeLabel(clientData.entityType)}</Badge>
                 </div>
                 <div className="flex items-center gap-4 text-muted-foreground">
                   <span>#{clientData.id}</span>
                   <span>•</span>
-                  <span>{clientData.entityType || 'לא צוין'}</span>
+                  <span>{clientData.identificationNumber}</span>
                 </div>
               </div>
             </div>
@@ -169,19 +145,21 @@ export function ClientView() {
                     <h4 className="text-sm text-muted-foreground mb-3">מידע כללי</h4>
                     <div className="space-y-3">
                       <InfoRow icon={Building} label="שם" value={clientData.name} />
-                      <InfoRow icon={Mail} label="אימייל" value={clientData.email} />
-                      <InfoRow icon={Phone} label="טלפון" value={clientData.phone} />
-                      <InfoRow icon={MapPin} label="כתובת" value={clientData.address || 'לא צוין'} />
-                      <InfoRow label="ח.פ / ע.מ" value={clientData.identificationNumber} />
-                      <InfoRow label="מס׳ עוסק" value={clientData.vatNumber || 'לא צוין'} />
-                      <InfoRow label="סוג ישות" value={clientData.entityType || 'לא צוין'} />
+                      <InfoRow icon={Mail} label="אימייל" value={clientData.email || '-'} />
+                      <InfoRow icon={Phone} label="טלפון" value={clientData.phone || '-'} />
+                      <InfoRow icon={Phone} label="פקס" value={clientData.fax || '-'} />
+                      <InfoRow icon={MapPin} label="כתובת" value={clientData.address || '-'} />
+                      <InfoRow label="ת.ז / ח.פ" value={clientData.identificationNumber} />
+                      <InfoRow label="מס׳ עוסק" value={clientData.vatNumber || '-'} />
+                      <InfoRow label="סוג ישות" value={getEntityTypeLabel(clientData.entityType)} />
+                      <InfoRow icon={Calendar} label="תאריך הקמה" value={formatDate(clientData.establishedDate)} />
                     </div>
                   </div>
                   <div className="pt-4 border-t border-border">
                     <h4 className="text-sm text-muted-foreground mb-3">פרטי תשלום</h4>
                     <div className="space-y-3">
-                      <InfoRow icon={Clock} label="תנאי תשלום" value={clientData.paymentTerms || 'לא צוין'} />
-                      <InfoRow label="מודל תשלום" value={clientData.paymentModel || 'לא צוין'} />
+                      <InfoRow icon={Clock} label="תנאי תשלום" value={clientData.paymentTerms || '-'} />
+                      <InfoRow label="מודל תשלום" value={clientData.paymentModel || '-'} />
                     </div>
                   </div>
                   {clientData.notes && (
