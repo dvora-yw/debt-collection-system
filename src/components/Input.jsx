@@ -1,7 +1,5 @@
 import React from 'react';
 
-
-
 export function Input({
   label,
   error,
@@ -12,7 +10,7 @@ export function Input({
   return (
     <div className="w-full">
       {label && (
-        <label className="block mb-2 text-foreground">
+        <label className="block mb-1 text-foreground font-medium">
           {label}
         </label>
       )}
@@ -23,14 +21,14 @@ export function Input({
           </div>
         )}
         <input
-          className={`w-full px-4 py-2.5 bg-input-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
+          className={`w-full px-4 py-3 text-base bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
             icon ? 'pr-10' : ''
-          } ${error ? 'border-destructive' : ''} ${className}`}
+          } ${className}`}
           {...props}
         />
       </div>
       {error && (
-        <p className="mt-1 text-sm text-destructive">{error}</p>
+        <p className="mt-1 text-sm font-semibold text-red-600">{error}</p>
       )}
     </div>
   );

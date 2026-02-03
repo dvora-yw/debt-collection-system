@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { Badge } from './Badge';
 import { Button } from './Button';
+import { Pagination } from './Pagination';
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
@@ -15,6 +16,8 @@ export function AdminDashboard() {
   const [kpis, setKpis] = useState(null);
   const [payments, setPayments] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [messagesPage, setMessagesPage] = useState(1);
+  const MESSAGES_PER_PAGE = 10;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const { user, logout } = useAuth();
@@ -51,30 +54,55 @@ export function AdminDashboard() {
     const loadDashboardData = async () => {
       try {
         // Note: backend doesn't expose /auth/me or /admin/dashboard/kpis in this environment.
-        // Fetch payments, messages and clients and compute KPIs on the client side.
-        const [paymentsRes, messagesRes, clientsRes] = await Promise.all([
+        // Fetch payments, messages, clients, and end-clients and compute KPIs on the client side.
+        const [paymentsRes, messagesRes, clientsRes, endClientsRes] = await Promise.all([
           api.get('/payments'),
           api.get('/messages/messages'),
           getClients(),
+          api.get('/end-clients'),
         ]);
 
         const paymentsData = paymentsRes?.data ?? [];
         const messagesData = messagesRes?.data ?? [];
-        const clientsData = clientsRes?.data ?? [];
+
+        const rawClients = clientsRes?.data;
+        const clientsData = Array.isArray(rawClients)
+          ? rawClients
+          : Array.isArray(rawClients?.content)
+            ? rawClients.content
+            : [];
+
+        const rawEndClients = endClientsRes?.data;
+        const endClientsData = Array.isArray(rawEndClients)
+          ? rawEndClients
+          : Array.isArray(rawEndClients?.content)
+            ? rawEndClients.content
+            : [];
+
+        console.log('=== AdminDashboard rawEndClients ===', rawEndClients);
+        console.log('=== AdminDashboard endClientsData ===', endClientsData);
 
         setAdmin(user ?? null);
         setPayments(paymentsData);
         setMessages(messagesData);
 
-        // Compute KPIs
-        const totalPaymentsValue = paymentsData.reduce((sum, p) => sum + parseAmount(p.amount ?? p.total ?? p.value), 0);
+        // Calculate total debt from endClients using totalDebt field
+        const safeEndClients = Array.isArray(endClientsData) ? endClientsData : [];
+        const totalDebtValue = safeEndClients.reduce((sum, item) => {
+          const ec = item.endClient || item; // תומך גם במבנה מקונן וגם ישיר
+          const debt = parseAmount(ec.totalDebt ?? 0);
+          console.log(`End client: ${ec.endClientName || ec.name}, totalDebt: ${ec.totalDebt}, parsed: ${debt}`);
+          return sum + debt;
+        }, 0);
+        console.log('=== Calculated totalDebtValue:', totalDebtValue);
+
         const activeClientsCount = Array.isArray(clientsData) ? clientsData.length : 0;
         const pendingPaymentsCount = paymentsData.filter(p => (p.status || '').toLowerCase() === 'pending').length;
         const completedPaymentsCount = paymentsData.filter(p => (p.status || '').toLowerCase() === 'completed').length;
         const collectionRate = paymentsData.length ? ((completedPaymentsCount / paymentsData.length) * 100).toFixed(1) + '%' : 'N/A';
 
         setKpis([
-          { title: 'סך הכל תשלומים', value: formatCurrency(totalPaymentsValue), change: null, trend: 'up', icon: DollarSign, color: 'text-primary', bgColor: 'bg-primary/10' },
+          { title: 'סך הכל חוב', value: formatCurrency(totalDebtValue), change: null, trend: 'up', icon: DollarSign, color: 'text-primary', bgColor: 'bg-primary/10' },
           { title: 'לקוחות פעילים', value: String(activeClientsCount), change: null, trend: 'up', icon: UserCheck, color: 'text-secondary', bgColor: 'bg-secondary/10' },
           { title: 'תשלומים ממתינים', value: formatCurrency(paymentsData.filter(p => (p.status || '').toLowerCase() === 'pending').reduce((s, p) => s + parseAmount(p.amount ?? p.total ?? p.value), 0)), change: null, trend: 'down', icon: Clock, color: 'text-[#f59e0b]', bgColor: 'bg-[#f59e0b]/10' },
           { title: 'שיעור גבייה', value: String(collectionRate), change: null, trend: completedPaymentsCount >= pendingPaymentsCount ? 'up' : 'down', icon: TrendingUp, color: 'text-[#10b981]', bgColor: 'bg-[#10b981]/10' },
@@ -90,6 +118,13 @@ export function AdminDashboard() {
 
     loadDashboardData();
   }, []);
+
+  // חישוב הודעות מדופדפות לדשבורד (עד 10 בעמוד)
+  const messagesTotalPages = Math.ceil((messages?.length || 0) / MESSAGES_PER_PAGE) || 1;
+  const safeMessagesPage = Math.min(Math.max(messagesPage, 1), messagesTotalPages);
+  const messagesStartIdx = (safeMessagesPage - 1) * MESSAGES_PER_PAGE;
+  const messagesEndIdx = messagesStartIdx + MESSAGES_PER_PAGE;
+  const paginatedMessages = (messages || []).slice(messagesStartIdx, messagesEndIdx);
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -114,6 +149,19 @@ export function AdminDashboard() {
     <>
       {/* Dashboard Content */}
       <div>
+        {/* User Info Section */}
+        {/* {admin && (
+          <div className="mb-8 p-4 bg-muted/30 rounded-lg flex items-center gap-3">
+            <div className="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-semibold">
+              {admin.username?.charAt(0).toUpperCase() || 'A'}
+            </div>
+            <div>
+              <p className="font-semibold text-lg">{admin.username || 'אדמין'}</p>
+              <p className="text-sm text-muted-foreground">{admin.email || 'admin@example.com'}</p>
+            </div>
+          </div>
+        )} */}
+
         {/* Add Client Button */}
         <div className="mb-6 flex items-center justify-between">
           <div>
@@ -236,7 +284,7 @@ export function AdminDashboard() {
 
             <CardContent>
               <div className="space-y-3">
-                {messages.map(msg => (
+                {paginatedMessages.map(msg => (
                   <div
                     key={msg.id}
                     className={`flex items-center justify-between px-6 py-4 rounded-xl bg-background border border-border hover:bg-muted/20 transition-colors ${msg.unread ? 'ring-1 ring-primary/10' : ''}`}
@@ -251,6 +299,17 @@ export function AdminDashboard() {
                     </div>
                   </div>
                 ))}
+                {messages.length === 0 && (
+                  <p className="text-center text-muted-foreground py-4">אין הודעות להצגה</p>
+                )}
+
+                {messages.length > MESSAGES_PER_PAGE && (
+                  <Pagination
+                    currentPage={safeMessagesPage}
+                    totalPages={messagesTotalPages}
+                    onPageChange={setMessagesPage}
+                  />
+                )}
 
                 <Button variant="outline" fullWidth size="sm" onClick={() => navigate('/messages')}>
                   צפה בכל ההודעות

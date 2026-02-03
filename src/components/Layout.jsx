@@ -4,10 +4,22 @@ import { LayoutDashboard, Users, CreditCard, Settings, LogOut, Menu, X, Bell, Do
 import { useAuth } from './AuthContext';
 
 export function Layout({ children, title = '' }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 1024);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Normalize user display data because the auth payload can be nested under `user`
+  const displayName = user?.user?.userName || user?.user?.username || user?.userName || user?.username || 'אדמין ראשי';
+  const displayEmail = user?.user?.email || user?.email || 'admin@example.com';
+  const avatarInitial = (displayName || displayEmail || 'א').trim().charAt(0).toUpperCase() || 'א';
+
+  // Debug: log the user data to check what's being stored
+  React.useEffect(() => {
+    console.log('Layout user:', user);
+    console.log('displayName:', displayName);
+    console.log('displayEmail:', displayEmail);
+  }, [user, displayName, displayEmail]);
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'דשבורד', route: '/admin-dashboard' },
@@ -17,18 +29,18 @@ export function Layout({ children, title = '' }) {
   ];
 
   return (
-    <div className="min-h-screen bg-muted/40" dir="rtl">
+    <div className="min-h-screen bg-muted/40 overflow-x-hidden" dir="rtl">
       {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
+      {!sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setSidebarOpen(true)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 right-0 h-full bg-sidebar text-sidebar-foreground w-64 transition-transform duration-300 z-50 ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0`}
+        className={`fixed top-0 right-0 h-full bg-sidebar text-sidebar-foreground w-64 transition-transform duration-300 z-50 ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'} `}
       >
         <div className="p-6 ">
           <div className="flex items-center justify-between mb-8">
@@ -42,7 +54,8 @@ export function Layout({ children, title = '' }) {
               </div>
             </div>
             <button
-              className="lg:hidden text-sidebar-foreground"
+              type="button"
+              className="text-sidebar-foreground hover:opacity-70 transition-opacity p-1 cursor-pointer"
               onClick={() => setSidebarOpen(false)}
             >
               <X className="w-6 h-6" />
@@ -77,18 +90,25 @@ export function Layout({ children, title = '' }) {
       </aside>
 
       {/* Main Content */}
-      <div className="lg:mr-64">
-        {/* Header */}
+      <div
+        className={`w-full transition-all duration-300 ${
+          sidebarOpen ? 'lg:pr-64' : 'pr-0'
+        }`}
+      >        {/* Header */}
         <header className="bg-card border-b border-border sticky top-0 z-30">
-          <div className="px-4 lg:px-8 py-4">
+          <div className={`w-full px-4 lg:px-8 py-4`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <button
-                  className="lg:hidden text-foreground"
-                  onClick={() => setSidebarOpen(true)}
-                >
-                  <Menu className="w-6 h-6" />
-                </button>
+                {!sidebarOpen && (
+                  <button
+                    type="button"
+                    className="text-foreground"
+                    onClick={() => setSidebarOpen(true)}
+                    aria-label="פתח תפריט"
+                  >
+                    <Menu className="w-6 h-6" />
+                  </button>
+                )}
                 <div>
                   <h1 className="text-2xl">{title || 'לוח בקרה'}</h1>
                   <p className="text-sm text-muted-foreground">סקירה כללית של המערכת</p>
@@ -101,11 +121,11 @@ export function Layout({ children, title = '' }) {
                 </button>
                 <div className="flex items-center gap-3 px-4 py-2 bg-muted rounded-xl">
                   <div className="text-right">
-                    <p className="text-sm">{user?.userName ?? ''}</p>
-                    <p className="text-xs text-muted-foreground">{user?.email ?? ''}</p>
+                    <p className="text-sm">{displayName}</p>
+                    <p className="text-xs text-muted-foreground">{displayEmail}</p>
                   </div>
                   <div className="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center text-white">
-                    א
+                    {avatarInitial}
                   </div>
                 </div>
               </div>
@@ -115,7 +135,9 @@ export function Layout({ children, title = '' }) {
 
         {/* Page Body */}
         <main className="p-4 lg:p-8">
-          {children}
+          <div className={`w-full`}>
+            {children}
+          </div>
         </main>
       </div>
     </div>

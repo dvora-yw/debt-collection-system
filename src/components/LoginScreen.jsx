@@ -2,25 +2,63 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './Button';
 import { Input } from './Input';
-import { Lock, Mail } from 'lucide-react';
-import { useAuth } from './AuthContext';
+import { Lock, Mail, User as UserIcon } from 'lucide-react';
 import api from '../services/api';
+import { validateEmail } from '../utils/validation';
 
 export default function LoginScreen() {
   const navigate = useNavigate();
+  const [loginType, setLoginType] = useState('CLIENT'); // 'ADMIN' | 'CLIENT'
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(false); // כעת נשתמש בזה
-  const { login } = useAuth();
+  const [errors, setErrors] = useState({});
+
+  const handleEmailChange = (value) => {
+    setEmail(value);
+    // Real-time email validation
+    const emailError = validateEmail(value);
+    const newErrors = { ...errors };
+    if (emailError) {
+      newErrors.email = emailError;
+    } else {
+      delete newErrors.email;
+    }
+    setErrors(newErrors);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const res = await api.post("/auth/login", {
-        email,
+    setErrors({});
+
+    let payload = {};
+
+    if (loginType === 'ADMIN') {
+      if (!username.trim()) {
+        setErrors({ username: 'יש להזין שם משתמש' });
+        return;
+      }
+      if (!password) {
+        setErrors({ password: 'יש להזין סיסמה' });
+        return;
+      }
+      payload = {
+        username: username.trim(),
         password,
-        remember
-      });
+      };
+    } else {
+      const emailError = validateEmail(email);
+      if (emailError) {
+        setErrors({ email: emailError });
+        return;
+      }
+      payload = {
+        email: email.trim(),
+      };
+    }
+
+    try {
+      const res = await api.post("/auth/login", payload);
       console.log("=== LOGIN RESPONSE ===");
       console.log("Full response:", res);
       console.log("Response data:", res.data);
@@ -31,56 +69,20 @@ export default function LoginScreen() {
         return;
       }
       
-      // חלץ נתונים - role ו emailVerified נמצאים בתוך user
-      const userData = res.data.user || res.data;
-      const emailVerified = userData.emailVerified;
-      const token = res.data.token;
-      const role = userData.role;
-      
-      // clientId יכול להיות מ-userData.clientId או מ-userData.client.id
-      const clientId = userData.clientId || userData.client?.id;
-      
-      console.log("emailVerified value:", emailVerified, "type:", typeof emailVerified);
-      console.log("token:", token);
-      console.log("role:", role);
-      console.log("clientId:", clientId);
-      console.log("Full userData:", userData);
-      
-      // אם המייל לא מאומת (emailVerified = false) → עבור לאימות מייל
-      // JWT יחזור רק אחרי אימות המייל
-      if (emailVerified !== true) {
-        console.log("Email NOT verified, navigating to email-verification");
-        // שמור את email זמנית כדי שדף אימות יוכל להשתמש בו
-        sessionStorage.setItem('pendingEmail', userData.email || email);
-        navigate("/email-verification");
+      const { userId } = res.data;
+      if (!userId) {
+        console.error('No userId in login response');
+        alert('שגיאה: לא הוחזר מזהה משתמש מהשרת');
         return;
       }
-      
-      // רק אם המייל מאומת ויש token, שמור את המשתמש
-      const dataToSave = { ...res.data };
-      login(dataToSave);
-      console.log("Login saved, user stored");
-      
-      // ניווט לפי role
-      if (role === "ADMIN") {
-        console.log("Navigating to admin-dashboard");
-        navigate("/admin-dashboard");
-      } else if (role === "CLIENT") {
-        console.log("Navigating to client-dashboard");
-        navigate("/client-dashboard");
-      } else if (role === "END_CLIENT") {
-        console.log("Navigating to end-customer view");
-        const endClientId = userData.endClientId || userData.endClient?.id;
-        if (endClientId) {
-          navigate(`/end-customer/${endClientId}`);
-        } else {
-          console.error("No endClientId found for END_CLIENT user");
-          navigate("/");
-        }
-      } else {
-        console.log("Unknown role:", role);
-        navigate("/");
+
+      sessionStorage.setItem('pendingUserId', String(userId));
+      if (loginType === 'CLIENT') {
+        sessionStorage.setItem('pendingEmail', email.trim());
       }
+
+      console.log('Navigating to email verification after login');
+      navigate('/email-verification');
 
     } catch (err) {
       console.error("Login error:", err);
@@ -103,25 +105,68 @@ export default function LoginScreen() {
         </div>
 
         <div className="bg-card rounded-xl shadow-lg border border-border p-8">
+          {/* בחירת סוג כניסה */}
+          <div className="flex mb-6 rounded-full bg-muted p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setLoginType('CLIENT')}
+              className={`flex-1 py-2 rounded-full transition-colors ${
+                loginType === 'CLIENT'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              לקוח עיסקי
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoginType('ADMIN')}
+              className={`flex-1 py-2 rounded-full transition-colors ${
+                loginType === 'ADMIN'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              מנהל מערכת
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-6">
-            <Input
-              type="email"
-              label="כתובת אימייל"
-              placeholder="example@domain.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              icon={<Mail className="w-5 h-5" />}
-              required
-            />
-            <Input
-              type="password"
-              label="סיסמה"
-              placeholder="הזינו סיסמה"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              icon={<Lock className="w-5 h-5" />}
-              required
-            />
+            {loginType === 'ADMIN' ? (
+              <>
+                <Input
+                  type="text"
+                  label="שם משתמש"
+                  placeholder="הזינו שם משתמש"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  error={errors.username}
+                  icon={<UserIcon className="w-5 h-5" />}
+                  required
+                />
+                <Input
+                  type="password"
+                  label="סיסמה"
+                  placeholder="הזינו סיסמה"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  error={errors.password}
+                  icon={<Lock className="w-5 h-5" />}
+                  required
+                />
+              </>
+            ) : (
+              <Input
+                type="email"
+                label="כתובת אימייל"
+                placeholder="example@domain.com"
+                value={email}
+                onChange={(e) => handleEmailChange(e.target.value)}
+                error={errors.email}
+                icon={<Mail className="w-5 h-5" />}
+                required
+              />
+            )}
 
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -151,6 +196,19 @@ export default function LoginScreen() {
               </button>
             </p>
           </div> */}
+
+          <div className="mt-6 pt-6 border-t border-border text-center">
+            <p className="text-sm text-muted-foreground mb-2">
+              לקוחות קצה
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/end-client-login')}
+              className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-primary border border-primary/40 rounded-lg hover:bg-primary/5 bg-transparent cursor-pointer"
+            >
+              כניסת לקוח קצה
+            </button>
+          </div>
         </div>
       </div>
     </div>

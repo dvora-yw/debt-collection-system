@@ -8,6 +8,13 @@ import { ArrowRight, Save, UserPlus, Upload, X, Plus } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from './AuthContext';
 import * as XLSX from 'xlsx';
+import {
+  validateName,
+  validatePhone,
+  validateEmail,
+  validateAmount,
+  validateIDNumber,
+} from '../utils/validation';
 
 export function AddEndCustomer() {
   const navigate = useNavigate();
@@ -19,10 +26,17 @@ export function AddEndCustomer() {
     totalDebt: "",
     dueDate: "",
     paymentMethod: "CASH",
+    chargeType: "ONE_TIME", // ONE_TIME / RECURRING
+    initialBalance: "",
+    recurringStartDate: "",
+    recurringIntervalValue: "1",
+    recurringIntervalUnit: "MONTHS",
+    recurringEndDate: "",
     persons: [
       {
         firstName: "",
         lastName: "",
+        identificationNumber: "",
         contacts: [
           { type: "EMAIL", value: "" },
           { type: "PHONE", value: "" },
@@ -42,6 +56,17 @@ export function AddEndCustomer() {
     { value: 'CHECK', label: 'צ\'ק' },
   ];
 
+  const chargeTypes = [
+    { value: 'ONE_TIME', label: 'חד פעמי' },
+    { value: 'RECURRING', label: 'מחזורי' },
+  ];
+
+  const intervalUnits = [
+    { value: 'DAYS', label: 'ימים' },
+    { value: 'MONTHS', label: 'חודשים' },
+    { value: 'YEARS', label: 'שנים' },
+  ];
+
   const contactTypes = [
     { value: 'EMAIL', label: 'אימייל' },
     { value: 'PHONE', label: 'טלפון' },
@@ -52,13 +77,36 @@ export function AddEndCustomer() {
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
+    
+    // Real-time validation
+    const newErrors = { ...errors };
+    
+    switch (field) {
+      case 'name':
+        const nameError = validateName(value);
+        if (nameError) {
+          newErrors.name = nameError;
+        } else {
+          delete newErrors.name;
+        }
+        break;
+      
+      case 'totalDebt':
+        const amountError = validateAmount(value);
+        if (amountError) {
+          newErrors.totalDebt = amountError;
+        } else {
+          delete newErrors.totalDebt;
+        }
+        break;
+      
+      default:
+        // Clear error for this field on change
         delete newErrors[field];
-        return newErrors;
-      });
+        break;
     }
+    
+    setErrors(newErrors);
   };
 
   const handlePersonChange = (personIndex, field, value) => {
@@ -67,6 +115,36 @@ export function AddEndCustomer() {
       newPersons[personIndex] = { ...newPersons[personIndex], [field]: value };
       return { ...prev, persons: newPersons };
     });
+    
+    // Real-time validation for person fields
+    const newErrors = { ...errors };
+    const errorKey = `person_${personIndex}_${field}`;
+    
+    switch (field) {
+      case 'firstName':
+      case 'lastName':
+        const nameError = validateName(value);
+        if (nameError) {
+          newErrors[errorKey] = nameError;
+        } else {
+          delete newErrors[errorKey];
+        }
+        break;
+      case 'identificationNumber': {
+        const idError = validateIDNumber(value);
+        if (idError) {
+          newErrors[errorKey] = idError;
+        } else {
+          delete newErrors[errorKey];
+        }
+        break;
+      }
+      default:
+        delete newErrors[errorKey];
+        break;
+    }
+    
+    setErrors(newErrors);
   };
 
   const handleContactChange = (personIndex, contactIndex, field, value) => {
@@ -77,6 +155,35 @@ export function AddEndCustomer() {
       newPersons[personIndex] = { ...newPersons[personIndex], contacts: newContacts };
       return { ...prev, persons: newPersons };
     });
+    
+    // Real-time validation for contact values
+    const newErrors = { ...errors };
+    const errorKey = `contact_${personIndex}_${contactIndex}_${field}`;
+    
+    if (field === 'value') {
+      const contact = formData.persons[personIndex]?.contacts[contactIndex];
+      if (contact?.type === 'EMAIL') {
+        const emailError = validateEmail(value);
+        if (emailError) {
+          newErrors[errorKey] = emailError;
+        } else {
+          delete newErrors[errorKey];
+        }
+      } else if (contact?.type === 'PHONE' || contact?.type === 'MOBILE') {
+        const phoneError = validatePhone(value);
+        if (phoneError) {
+          newErrors[errorKey] = phoneError;
+        } else {
+          delete newErrors[errorKey];
+        }
+      } else {
+        delete newErrors[errorKey];
+      }
+    } else {
+      delete newErrors[errorKey];
+    }
+    
+    setErrors(newErrors);
   };
 
   const addPerson = () => {
@@ -87,6 +194,7 @@ export function AddEndCustomer() {
         {
           firstName: "",
           lastName: "",
+          identificationNumber: "",
           contacts: [
             { type: "EMAIL", value: "" },
             { type: "PHONE", value: "" },
@@ -147,6 +255,10 @@ export function AddEndCustomer() {
       if (!person.lastName || !person.lastName.trim()) {
         e[`person_${pIdx}_lastName`] = 'שם משפחה חובה';
       }
+      const idError = validateIDNumber(person.identificationNumber || '');
+      if (idError) {
+        e[`person_${pIdx}_identificationNumber`] = idError;
+      }
 
       // Check if at least one EMAIL contact exists
       const hasEmail = person.contacts.some(c => c.type === 'EMAIL' && c.value.trim());
@@ -187,6 +299,7 @@ export function AddEndCustomer() {
       const personsPayload = formData.persons.map(person => ({
         firstName: person.firstName,
         lastName: person.lastName,
+        identificationNumber: person.identificationNumber,
         contacts: person.contacts
           .filter(c => c.value && c.value.trim())
           .map(c => ({
@@ -195,12 +308,45 @@ export function AddEndCustomer() {
           })),
       }));
 
+      // Build users array for EndClientService.create (one user per email)
+      // כל user מקבל גם ת"ז וטלפון (אם קיימים אצל אותו אדם)
+      const users = [];
+      formData.persons.forEach(person => {
+        const phoneContact = (person.contacts || []).find(c =>
+          (c.type === 'PHONE' || c.type === 'MOBILE') && c.value && c.value.trim()
+        );
+
+        (person.contacts || [])
+          .filter(c => c.type === 'EMAIL' && c.value && c.value.trim())
+          .forEach(contact => {
+            const email = contact.value.trim();
+            if (!users.some(u => u.email === email)) {
+              users.push({
+                userName: email,
+                email,
+                identificationNumber: person.identificationNumber || '',
+                phone: phoneContact ? phoneContact.value.trim() : '',
+              });
+            }
+          });
+      });
+
       // Single payload with clientId, name, totalDebt, and persons
+      const isRecurring = formData.chargeType === 'RECURRING';
       const endClientPayload = {
         clientId: user.user.clientId,
         name: formData.name,
         totalDebt: formData.totalDebt,
         persons: personsPayload,
+        users,
+        initialPrepaidBalance: formData.initialBalance || null,
+        initialChargeAmount: formData.totalDebt,
+        initialChargeDueDate: formData.dueDate,
+        initialChargeType: formData.chargeType,
+        intervalValue: isRecurring ? Number(formData.recurringIntervalValue || 0) || null : null,
+        intervalUnit: isRecurring ? formData.recurringIntervalUnit : null,
+        recurringEndDate: isRecurring ? formData.recurringEndDate || null : null,
+        startDate: isRecurring ? (formData.recurringStartDate || formData.dueDate) : null,
       };
 
       console.log('=== Creating end client with persons ===');
@@ -222,6 +368,7 @@ export function AddEndCustomer() {
           amount: formData.totalDebt,
           dueDate: formData.dueDate,
           paymentMethod: formData.paymentMethod,
+          type: formData.chargeType,
         };
 
         console.log('=== Creating debt ===');
@@ -330,6 +477,60 @@ export function AddEndCustomer() {
             </CardContent>
           </Card>
 
+          {/* Financial Setup */}
+          <Card padding="lg" className="mb-6">
+            <CardHeader>
+              <CardTitle>הגדרות תשלום</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <Input
+                  label="יתרת זכות התחלתית (₪)"
+                  type="number"
+                  step="0.01"
+                  value={formData.initialBalance}
+                  onChange={(e) => handleChange('initialBalance', e.target.value)}
+                />
+                <Select
+                  label="סוג חיוב"
+                  value={formData.chargeType}
+                  onChange={(e) => handleChange('chargeType', e.target.value)}
+                  options={chargeTypes}
+                />
+              </div>
+
+              {formData.chargeType === 'RECURRING' && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <Input
+                    label="תאריך התחלה"
+                    type="date"
+                    value={formData.recurringStartDate}
+                    onChange={(e) => handleChange('recurringStartDate', e.target.value)}
+                  />
+                  <Input
+                    label="כל כמה"
+                    type="number"
+                    min="1"
+                    value={formData.recurringIntervalValue}
+                    onChange={(e) => handleChange('recurringIntervalValue', e.target.value)}
+                  />
+                  <Select
+                    label="יחידת זמן"
+                    value={formData.recurringIntervalUnit}
+                    onChange={(e) => handleChange('recurringIntervalUnit', e.target.value)}
+                    options={intervalUnits}
+                  />
+                  <Input
+                    label="תאריך סיום (אופציונלי)"
+                    type="date"
+                    value={formData.recurringEndDate}
+                    onChange={(e) => handleChange('recurringEndDate', e.target.value)}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Persons */}
           {formData.persons.map((person, pIdx) => (
             <Card key={pIdx} padding="lg" className="mb-6">
@@ -350,7 +551,7 @@ export function AddEndCustomer() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                   <Input
                     label="שם פרטי"
                     value={person.firstName}
@@ -365,8 +566,13 @@ export function AddEndCustomer() {
                     error={errors[`person_${pIdx}_lastName`]}
                     required
                   />
+                  <Input
+                    label="ת.ז"
+                    value={person.identificationNumber}
+                    onChange={(e) => handlePersonChange(pIdx, 'identificationNumber', e.target.value)}
+                    error={errors[`person_${pIdx}_identificationNumber`]}
+                  />
                 </div>
-
                 {/* Contacts for this person */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">

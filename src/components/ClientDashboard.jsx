@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { Button } from './Button';
 import { Badge } from './Badge';
 import { Input } from './Input';
 import { useAuth } from './AuthContext';
+import { Pagination } from './Pagination';
+import { Modal } from './Modal';
+import { EndCustomerDetails } from './EndCustomerDetails';
 import api from '../services/api';
+import * as XLSX from 'xlsx';
 import {
   LogOut,
   DollarSign,
@@ -19,17 +23,23 @@ import {
   Users,
   Clock,
   CheckCircle,
+  User,
+  AlertCircle,
 } from 'lucide-react';
 
 export function ClientDashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
   const [clientData, setClientData] = useState(null);
   const [endCustomers, setEndCustomers] = useState([]);
+  const [clientPayments, setClientPayments] = useState([]);
   const [clientPersons, setClientPersons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedEndCustomer, setSelectedEndCustomer] = useState(null);
 
   useEffect(() => {
     const fetchClientData = async () => {
@@ -83,6 +93,30 @@ export function ClientDashboard() {
     fetchEndClients();
   }, [clientData?.id]);
 
+  // Fetch payments for all end customers of this client
+  useEffect(() => {
+    if (!clientData?.id || !endCustomers || endCustomers.length === 0) {
+      setClientPayments([]);
+      return;
+    }
+
+    const fetchPayments = async () => {
+      try {
+        const res = await api.get('/payments');
+        const data = Array.isArray(res.data) ? res.data : [];
+        const endClientIds = new Set(endCustomers.map((ec) => ec.id));
+        const filtered = data.filter((p) => endClientIds.has(p.endClientId));
+        setClientPayments(filtered);
+      } catch (err) {
+        console.error('Error fetching client payments:', err);
+        setClientPayments([]);
+      }
+    };
+
+    fetchPayments();
+  }, [clientData?.id, endCustomers]);
+
+
   // Fetch client contacts (not persons - those belong to end clients)
   useEffect(() => {
     if (!clientData?.id) return;
@@ -100,6 +134,81 @@ export function ClientDashboard() {
     fetchClientContacts();
   }, [clientData?.id]);
 
+  const requiredExcelHeaders = [
+    'endClientName',
+    'totalDebt',
+    'personFirstName',
+    'personLastName',
+    'contactType',
+    'contactValue'
+  ];
+
+  const handleImportExcel = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const workbook = XLSX.read(event.target?.result, { type: 'array' });
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const data = XLSX.utils.sheet_to_json(worksheet);
+
+          if (!data || data.length === 0) {
+            alert('קובץ אקסל ריק');
+            return;
+          }
+
+          // Validate headers
+          const fileHeaders = Object.keys(data[0] || {});
+          const missingHeaders = requiredExcelHeaders.filter(
+            (header) => !fileHeaders.includes(header)
+          );
+
+          if (missingHeaders.length > 0) {
+            alert(
+              `כותרות חסרות בקובץ אקסל:\n${missingHeaders.join(', ')}\n\nכותרות דרושות:\n${requiredExcelHeaders.join(', ')}`
+            );
+            return;
+          }
+
+          // Send original file to backend (server will detect sheet/headers)
+          const formDataToSend = new FormData();
+          formDataToSend.append('file', file);
+          formDataToSend.append('clientId', String(clientData.id));
+
+          const response = await api.post(`/end-clients/import?clientId=${encodeURIComponent(clientData.id)}`, formDataToSend, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          });
+
+          alert('לקוחות קצה הועלו בהצלחה!');
+          // Refresh end customers
+          const endClientsRes = await api.get('/end-clients');
+          setEndCustomers(endClientsRes.data || []);
+        } catch (error) {
+          console.error('Error importing end clients:', error);
+          alert('שגיאה בהעלאת לקוחות קצה: ' + (error.response?.data?.message || error.message));
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } catch (error) {
+      console.error('Error reading file:', error);
+      alert('שגיאה בקריאת הקובץ');
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, endCustomers.length]);
+
   if (loading) return <div className="p-8">טוען נתונים...</div>;
   if (error) return <div className="p-8 text-red-600">{error}</div>;
   if (!clientData) return <div className="p-8">אין נתונים</div>;
@@ -116,9 +225,30 @@ export function ClientDashboard() {
     );
   });
 
+  const ITEMS_PER_PAGE = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedCustomers = filteredCustomers.slice(startIndex, endIndex);
+
   // Calculate stats
   const totalEndCustomers = endCustomers.length;
-  const totalDebt = endCustomers.reduce((sum, c) => sum + (parseFloat(c.debt) || 0), 0);
+  const parseAmount = (value) => {
+    if (!value && value !== 0) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const num = value.replace(/[^0-9.-]+/g, '');
+      return parseFloat(num) || 0;
+    }
+    return 0;
+  };
+
+  const totalDebt = endCustomers.reduce(
+    (sum, c) => sum + parseAmount(c.debt || c.totalDebt || 0),
+    0
+  );
+  const totalPaid = clientPayments.reduce((sum, p) => sum + parseAmount(p.amount), 0);
+  const remainingDebt = Math.max(totalDebt - totalPaid, 0);
   const pendingPayments = endCustomers.filter(c => c.status !== 'paid').length;
   const paidThisMonth = endCustomers.filter(c => c.status === 'paid').length;
 
@@ -200,7 +330,8 @@ export function ClientDashboard() {
               </div>
             </div>
             <Button variant="ghost" size="sm" onClick={() => {
-              // TODO: logout
+              logout();
+              navigate('/');
             }}>
               <LogOut className="w-5 h-5" />
               התנתק
@@ -210,7 +341,7 @@ export function ClientDashboard() {
       </header>
 
       <main className="p-4 lg:p-8">
-        {/* TODO: KPI Cards - להוסיף בחזרה אם נדרש
+        {/* Summary KPIs for debts and payments */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Card padding="md" className="rounded-2xl">
             <div className="flex items-center justify-between">
@@ -239,11 +370,11 @@ export function ClientDashboard() {
           <Card padding="md" className="rounded-2xl">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-2">ממתינים לתשלום</p>
-                <h3 className="text-3xl font-bold">{pendingPayments}</h3>
+                <p className="text-sm text-muted-foreground mb-2">סה"כ שולם עד היום</p>
+                <h3 className="text-3xl font-bold">₪{totalPaid.toLocaleString('he-IL')}</h3>
               </div>
               <div className="bg-blue-100 p-4 rounded-xl">
-                <Clock className="w-6 h-6 text-secondary" />
+                <CheckCircle className="w-6 h-6 text-green-600" />
               </div>
             </div>
           </Card>
@@ -251,16 +382,15 @@ export function ClientDashboard() {
           <Card padding="md" className="rounded-2xl">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-2">שולמו החודש</p>
-                <h3 className="text-3xl font-bold">{paidThisMonth}</h3>
+                <p className="text-sm text-muted-foreground mb-2">יתרת חוב כוללת</p>
+                <h3 className="text-3xl font-bold">₪{remainingDebt.toLocaleString('he-IL')}</h3>
               </div>
               <div className="bg-green-100 p-4 rounded-xl">
-                <CheckCircle className="w-6 h-6 text-green-600" />
+                <AlertCircle className="w-6 h-6 text-red-500" />
               </div>
             </div>
           </Card>
         </div>
-        */}
 
         {/* Main Content Grid: End Customers (main) + Contacts (sidebar) */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
@@ -280,6 +410,22 @@ export function ClientDashboard() {
                     className="pr-10"
                   />
                 </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleImportExcel}
+                  className="hidden"
+                />
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="md"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-5 h-5" />
+                  הוסף מאקסל
+                </Button>
                 <Button variant="outline" size="md">
                   <Download className="w-5 h-5" />
                   ייצא
@@ -289,6 +435,9 @@ export function ClientDashboard() {
                   הוסף לקוח קצה
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                שדות דרושים לאקסל: endClientName, totalDebt, personFirstName, personLastName, contactType, contactValue
+              </p>
             </div>
           </CardHeader>
 
@@ -298,13 +447,15 @@ export function ClientDashboard() {
                 <thead>
                   <tr className="border-b border-border">
                     <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">שם לקוח קצה</th>
+                    <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">חוב נוכחי</th>
+                    <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">החיוב הבא</th>
                     <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">סטטוס</th>
                     <th className="text-right py-4 px-4 text-sm font-medium text-muted-foreground">פעולות</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCustomers.length > 0 ? (
-                    filteredCustomers.map((endClient, index) => (
+                    paginatedCustomers.map((endClient, index) => (
                       <tr key={endClient.id || index} className="border-b border-border hover:bg-muted/50 transition-colors">
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-3">
@@ -316,6 +467,54 @@ export function ClientDashboard() {
                             </div>
                           </div>
                         </td>
+                        <td className="py-4 px-4 text-sm">
+                          {(() => {
+                            const rawDebt = endClient.debt || endClient.totalDebt || 0;
+                            const amount = parseAmount(rawDebt);
+                            return amount
+                              ? `₪${amount.toLocaleString('he-IL')}`
+                              : '-';
+                          })()}
+                        </td>
+                        <td className="py-4 px-4 text-sm">
+                          {(() => {
+                            const chargeType = endClient.chargeType || endClient.initialChargeType;
+                            if (!chargeType || chargeType === 'ONE_TIME') {
+                              const date = endClient.initialChargeDueDate || endClient.dueDate;
+                              if (!date) {
+                                return 'חיוב חד פעמי';
+                              }
+                              return `חיוב חד פעמי • ${new Date(date).toLocaleDateString('he-IL')}`;
+                            }
+
+                            const intervalValue = endClient.intervalValue || endClient.recurringIntervalValue;
+                            const intervalUnit = endClient.intervalUnit || endClient.recurringIntervalUnit;
+                            const recurringAmount = parseAmount(
+                              endClient.recurringAmount ||
+                              endClient.initialChargeAmount ||
+                              endClient.totalDebt ||
+                              0
+                            );
+
+                            const unitLabel = (() => {
+                              switch (intervalUnit) {
+                                case 'DAYS':
+                                  return 'ימים';
+                                case 'YEARS':
+                                  return 'שנים';
+                                case 'MONTHS':
+                                default:
+                                  return 'חודשים';
+                              }
+                            })();
+
+                            if (!intervalValue) {
+                              return 'מחזורי';
+                            }
+
+                            return `${recurringAmount ? `₪${recurringAmount.toLocaleString('he-IL')} ` : ''}כל ${intervalValue} ${unitLabel}`;
+                          })()}
+                        </td>
                         <td className="py-4 px-4">
                           <Badge variant="success">פעיל</Badge>
                         </td>
@@ -323,7 +522,7 @@ export function ClientDashboard() {
                           <Button 
                             variant="ghost" 
                             size="sm"
-                            onClick={() => navigate(`/end-customer/${endClient.id}`)}
+                            onClick={() => setSelectedEndCustomer(endClient)}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -340,6 +539,14 @@ export function ClientDashboard() {
                 </tbody>
               </table>
             </div>
+
+            {filteredCustomers.length > ITEMS_PER_PAGE && (
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+              />
+            )}
           </CardContent>
             </Card>
           </div>
@@ -376,6 +583,18 @@ export function ClientDashboard() {
           </div>
         </div>
       </main>
+
+      {/* Modal for End Customer Details - same style as admin view */}
+      <Modal
+        isOpen={Boolean(selectedEndCustomer)}
+        onClose={() => setSelectedEndCustomer(null)}
+        title={selectedEndCustomer ? (selectedEndCustomer.endClientName || selectedEndCustomer.name) : ''}
+        size="xl"
+      >
+        {selectedEndCustomer && (
+          <EndCustomerDetails endClient={selectedEndCustomer} />
+        )}
+      </Modal>
     </div>
   );
 }

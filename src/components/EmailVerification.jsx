@@ -14,9 +14,8 @@ export function EmailVerification({
     const [timer, setTimer] = useState(60);
     const [canResend, setCanResend] = useState(false);
     const inputRefs = useRef([]);
-    const { user } = useAuth();
+    const { user, login } = useAuth();
     const navigate = useNavigate();
-    const { login } = useAuth();
 
     useEffect(() => {
         inputRefs.current = inputRefs.current.slice(0, 6);
@@ -80,19 +79,46 @@ export function EmailVerification({
             console.log("=== VERIFY EMAIL ===");
             console.log("Sending code:", fullCode);
             
+            const pendingUserId = sessionStorage.getItem('pendingUserId');
+            const userId = pendingUserId ? Number(pendingUserId) : null;
+
+            if (!userId) {
+                alert('שגיאה: לא נמצא משתמש לאימות. נסה להתחבר מחדש.');
+                navigate('/');
+                return;
+            }
+
             const res = await api.post('/auth/verify-email', {
+                userId,
                 code: fullCode
             });
             
             console.log("Verify response:", res.data);
             
+            const data = res.data;
+            const role = data.endClientId
+                ? 'END_CLIENT'
+                : data.clientId
+                ? 'CLIENT'
+                : 'ADMIN';
+
+            const userForContext = {
+                user: {
+                    id: data.userId,
+                    clientId: data.clientId,
+                    endClientId: data.endClientId,
+                    role,
+                    emailVerified: data.emailVerified,
+                },
+                token: data.token,
+            };
+
             // שמור את התשובה (שמכילה token JWT)
-            login(res.data);
+            login(userForContext);
             console.log("User saved after email verification");
-            
-            // חלץ role מתוך user
-            const userData = res.data.user || res.data;
-            const role = userData.role;
+
+            // נקה את ה-pending user לאחר הצלחה
+            sessionStorage.removeItem('pendingUserId');
             
             console.log("Role:", role);
             
@@ -107,7 +133,7 @@ export function EmailVerification({
                     break;
                 case "END_CLIENT":
                     console.log("Navigating to end-customer view");
-                    const endClientId = userData.endClientId || userData.endClient?.id;
+                    const endClientId = data.endClientId;
                     if (endClientId) {
                         navigate(`/end-customer/${endClientId}`);
                     } else {
@@ -127,20 +153,17 @@ export function EmailVerification({
 
     const handleResend = async () => {
         try {
-            const pendingEmail = sessionStorage.getItem('pendingEmail');
-            const email = pendingEmail || user?.email;
-            
-            if (!email) {
-                alert("אימייל לא נמצא");
+            const pendingUserId = sessionStorage.getItem('pendingUserId');
+            const userId = pendingUserId ? Number(pendingUserId) : user?.user?.id;
+
+            if (!userId) {
+                alert('שגיאה: לא נמצא משתמש לשליחת קוד. נסה להתחבר מחדש.');
+                navigate('/');
                 return;
             }
             
-            console.log("Resending code to:", email);
-            await api.post('/auth/resend-code', null, {
-                params: {
-                    email: email
-                }
-            });
+            console.log("Resending code for user:", userId);
+            await api.post('/auth/resend-code', { userId });
             
             console.log("Code resent successfully");
             setTimer(60);

@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { Badge } from './Badge';
 import { Button } from './Button';
+import { Modal } from './Modal';
+import { EndCustomerDetails } from './EndCustomerDetails';
 import DocumentView from './DocumentView';
 import api from '../services/api';
+import { getEndClientsByClient } from '../services/endClientService';
 import {
   ArrowRight,
   Building,
@@ -28,14 +31,27 @@ export function ClientView() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [clientData, setClientData] = useState(null);
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [endClients, setEndClients] = useState([]);
+  const [endClientsLoading, setEndClientsLoading] = useState(false);
+  const [endClientsError, setEndClientsError] = useState(null);
+  const [endClientsDebtMap, setEndClientsDebtMap] = useState({}); // endClientId -> current debt
+  const [selectedEndClient, setSelectedEndClient] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchClient = async () => {
       try {
         const res = await api.get(`/clients/${id}`);
         setClientData(res.data);
+
+        // נסה למשוך אנשי קשר גם מתוך הלקוח עצמו (אם קיימים)
+        const inlineContacts = res.data?.contacts || res.data?.clientContacts || [];
+        if (Array.isArray(inlineContacts) && inlineContacts.length > 0) {
+          setContacts(inlineContacts);
+        }
       } catch (err) {
         console.error('Error fetching client:', err);
         setError('שגיאה בטעינת נתוני הלקוח');
@@ -49,19 +65,148 @@ export function ClientView() {
     }
   }, [id]);
 
+  // טעינת אנשי קשר מקריאה ייעודית לפי ה-API הקיים (/contacts/{clientId})
+  useEffect(() => {
+    const fetchContacts = async () => {
+      if (!id) return;
+      try {
+        // לפי הקונטרולר: @GetMapping("/contacts/{clientId}")
+        const res = await api.get(`/client-contacts/contacts/${id}`);
+        const data = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.contacts)
+            ? res.data.contacts
+            : [];
+        if (data.length > 0) {
+          setContacts(data);
+        }
+      } catch (err) {
+        // אם אין endpoint או מחזיר 404 פשוט נתעלם
+        if (err?.response?.status !== 404) {
+          console.warn('Error fetching client contacts:', err);
+        }
+      }
+    };
+
+    fetchContacts();
+  }, [id]);
+
+  useEffect(() => {
+    const fetchEndClients = async () => {
+      if (!id) return;
+      setEndClientsLoading(true);
+      setEndClientsError(null);
+      setEndClientsDebtMap({});
+      try {
+        const res = await getEndClientsByClient(id);
+        const list = Array.isArray(res.data) ? res.data : [];
+        setEndClients(list);
+
+        // לאחר טעינת לקוחות הקצה, נטען לכל אחד סיכום פיננסי כדי לחשב חוב נוכחי אמיתי
+        try {
+          const results = await Promise.allSettled(
+            list.map((ec) => api.get(`/end-clients/${ec.id}/financial-summary`))
+          );
+
+          const debtMap = {};
+
+          const parseAmount = (value) => {
+            if (!value && value !== 0) return 0;
+            if (typeof value === 'number') return value;
+            if (typeof value === 'string') {
+              const num = value.replace(/[^0-9.-]+/g, '');
+              return parseFloat(num) || 0;
+            }
+            return 0;
+          };
+
+          results.forEach((resItem, index) => {
+            const ec = list[index];
+            if (!ec || resItem.status !== 'fulfilled') return;
+            const summary = resItem.value?.data;
+            const openCharges = summary?.openCharges || [];
+            const totalOpenDebt = openCharges.reduce(
+              (sum, c) => sum + parseAmount(c.amount || 0),
+              0
+            );
+            debtMap[ec.id] = totalOpenDebt;
+          });
+
+          setEndClientsDebtMap(debtMap);
+        } catch (err) {
+          console.warn('Error loading financial summaries for end-clients:', err);
+        }
+      } catch (err) {
+        console.error('Error fetching end clients:', err);
+        setEndClientsError('שגיאה בטעינת לקוחות הקצה');
+      } finally {
+        setEndClientsLoading(false);
+      }
+    };
+
+    if (activeTab === 'endClients') {
+      fetchEndClients();
+    }
+  }, [activeTab, id]);
+
   if (loading) return <div className="p-8">טוען נתונים...</div>;
   if (error) return <div className="p-8 text-red-600">{error}</div>;
   if (!clientData) return <div className="p-8">לא נמצאו נתונים</div>;
 
   const getEntityTypeLabel = (entityType) => {
+    if (!entityType) return 'לא צוין';
+    const normalized = String(entityType).toUpperCase().replace(/[-\s]/g, '_');
     const labels = {
-      COMPANY: 'חברה',
+      EXEMPT_DEALER: 'עוסק פטור',
+      EXEMPTDEALER: 'עוסק פטור',
+      AUTHORIZED_DEALER: 'עוסק מורשה',
+      AUTHORIZEDDEALER: 'עוסק מורשה',
+      PRIVATE_COMPANY: 'חברה פרטית (ח"פ)',
+      PRIVATECOMPANY: 'חברה פרטית (ח"פ)',
+      PUBLIC_COMPANY: 'חברה ציבורית',
+      PUBLICCOMPANY: 'חברה ציבורית',
+      REGISTERED_PARTNERSHIP: 'שותפות רשומה',
+      REGISTEREDPARTNERSHIP: 'שותפות רשומה',
+      LIMITED_PARTNERSHIP: 'שותפות מוגבלת',
+      LIMITEDPARTNERSHIP: 'שותפות מוגבלת',
+      NON_PROFIT: 'עמותה / מלכ"ר',
+      NONPROFIT: 'עמותה / מלכ"ר',
+      COOPERATIVE: 'אגודה שיתופית',
+      FOREIGN_COMPANY: 'חברה זרה',
+      FOREIGNCOMPANY: 'חברה זרה',
       PRIVATE_PERSON: 'אדם פרטי',
+      PRIVATEPERSON: 'אדם פרטי',
+      // תאימות לאחור
+      COMPANY: 'חברה',
       BUSINESS: 'עוסק',
-      NONPROFIT: 'עמותה',
       OTHER: 'אחר'
     };
-    return labels[entityType] || entityType;
+    return labels[normalized] || entityType;
+  };
+
+  const getPaymentTermsLabel = (terms) => {
+    if (!terms) return '-';
+    const normalized = String(terms).toUpperCase();
+    const labels = {
+      IMMEDIATE: 'מיידי',
+      NET_7: 'שוטף +7',
+      NET_14: 'שוטף +14',
+      NET_30: 'שוטף +30',
+      ADVANCE: 'תשלום מראש',
+    };
+    return labels[normalized] || terms;
+  };
+
+  const getPaymentModelLabel = (model) => {
+    if (!model) return '-';
+    const normalized = String(model).toUpperCase();
+    const labels = {
+      INVOICE: 'חשבונית',
+      SUBSCRIPTION: 'מנוי',
+      INSTALLMENTS: 'תשלומים',
+      ONE_TIME: 'חד פעמי',
+    };
+    return labels[normalized] || model;
   };
 
   const formatDate = (dateStr) => {
@@ -72,8 +217,6 @@ export function ClientView() {
       return dateStr;
     }
   };
-
-  const contacts = clientData.contacts || [];
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">
@@ -91,8 +234,8 @@ export function ClientView() {
                   <Badge variant="default">{getEntityTypeLabel(clientData.entityType)}</Badge>
                 </div>
                 <div className="flex items-center gap-4 text-muted-foreground">
-                  <span>#{clientData.id}</span>
-                  <span>•</span>
+                  {/* <span>#{clientData.id}</span> */}
+                  {/* <span>•</span> */}
                   <span>{clientData.identificationNumber}</span>
                 </div>
               </div>
@@ -109,24 +252,31 @@ export function ClientView() {
           <div className="flex gap-2 border-b border-border">
             <button
               onClick={() => setActiveTab('overview')}
-              className={`px-6 py-3 transition-colors ${
-                activeTab === 'overview'
-                  ? 'border-b-2 border-primary text-primary font-medium'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={`px-6 py-3 transition-colors ${activeTab === 'overview'
+                ? 'border-b-2 border-primary text-primary font-medium'
+                : 'text-muted-foreground hover:text-foreground'
+                }`}
             >
               סקירה כללית
             </button>
             <button
               onClick={() => setActiveTab('documents')}
-              className={`px-6 py-3 transition-colors flex items-center gap-2 ${
-                activeTab === 'documents'
-                  ? 'border-b-2 border-primary text-primary font-medium'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+              className={`px-6 py-3 transition-colors flex items-center gap-2 ${activeTab === 'documents'
+                ? 'border-b-2 border-primary text-primary font-medium'
+                : 'text-muted-foreground hover:text-foreground'
+                }`}
             >
               <FileText className="w-5 h-5" />
               מסמכים
+            </button>
+            <button
+              onClick={() => setActiveTab('endClients')}
+              className={`px-6 py-3 transition-colors ${activeTab === 'endClients'
+                ? 'border-b-2 border-primary text-primary font-medium'
+                : 'text-muted-foreground hover:text-foreground'
+                }`}
+            >
+              לקוחות קצה
             </button>
           </div>
         </div>
@@ -143,23 +293,31 @@ export function ClientView() {
                 <div className="space-y-4">
                   <div>
                     <h4 className="text-sm text-muted-foreground mb-3">מידע כללי</h4>
-                    <div className="space-y-3">
-                      <InfoRow icon={Building} label="שם" value={clientData.name} />
-                      <InfoRow icon={Mail} label="אימייל" value={clientData.email || '-'} />
-                      <InfoRow icon={Phone} label="טלפון" value={clientData.phone || '-'} />
-                      <InfoRow icon={Phone} label="פקס" value={clientData.fax || '-'} />
-                      <InfoRow icon={MapPin} label="כתובת" value={clientData.address || '-'} />
-                      <InfoRow label="ת.ז / ח.פ" value={clientData.identificationNumber} />
-                      <InfoRow label="מס׳ עוסק" value={clientData.vatNumber || '-'} />
-                      <InfoRow label="סוג ישות" value={getEntityTypeLabel(clientData.entityType)} />
-                      <InfoRow icon={Calendar} label="תאריך הקמה" value={formatDate(clientData.establishedDate)} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <InfoRow icon={Building} label="שם" value={clientData.name} />
+                        <InfoRow icon={Mail} label="אימייל" value={clientData.email || '-'} />
+                        <InfoRow icon={Phone} label="טלפון" value={clientData.phone || '-'} />
+                        <InfoRow icon={Phone} label="פקס" value={clientData.fax || '-'} />
+                        <InfoRow icon={MapPin} label="כתובת" value={clientData.address || '-'} />
+                      </div>
+                      <div className="space-y-3">
+                        <InfoRow icon={CreditCard} label="ת.ז / ח.פ" value={clientData.identificationNumber} />
+                        <InfoRow icon={CreditCard} label="מס׳ עוסק" value={clientData.vatNumber || '-'} />
+                        <InfoRow icon={User} label="סוג ישות" value={getEntityTypeLabel(clientData.entityType)} />
+                        <InfoRow icon={Calendar} label="תאריך הקמה" value={formatDate(clientData.establishedDate)} />
+                      </div>
                     </div>
                   </div>
                   <div className="pt-4 border-t border-border">
                     <h4 className="text-sm text-muted-foreground mb-3">פרטי תשלום</h4>
-                    <div className="space-y-3">
-                      <InfoRow icon={Clock} label="תנאי תשלום" value={clientData.paymentTerms || '-'} />
-                      <InfoRow label="מודל תשלום" value={clientData.paymentModel || '-'} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-3">
+                        <InfoRow icon={Clock} label="תנאי תשלום" value={getPaymentTermsLabel(clientData.paymentTerms)} />
+                      </div>
+                      <div className="space-y-3">
+                        <InfoRow icon={DollarSign} label="מודל תשלום" value={getPaymentModelLabel(clientData.paymentModel)} />
+                      </div>
                     </div>
                   </div>
                   {clientData.notes && (
@@ -220,20 +378,134 @@ export function ClientView() {
         )}
 
         {activeTab === 'documents' && (
-          <DocumentView clientName={clientData.name} />
+          <DocumentView clientId={clientData.id} clientName={clientData.name} />
         )}
+
+        {activeTab === 'endClients' && (
+          <>
+            <Card padding="lg">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <CardTitle>לקוחות קצה של {clientData.name}</CardTitle>
+                  </div>
+                </div>
+                <div>
+                  <Link to="/admin-add-end-customer" state={{ clientId: id, clientName: clientData.name }}>
+                    <Button
+                      variant="primary"
+                      size="md"
+                    >
+                      <User className="w-5 h-5" />
+                      הוסף לקוח קצה
+                    </Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {endClientsLoading && <div className="py-6">טוען לקוחות קצה...</div>}
+                {endClientsError && <div className="py-6 text-destructive">{endClientsError}</div>}
+                {!endClientsLoading && !endClientsError && (
+                  endClients && endClients.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {endClients.map((ec) => (
+                        <button
+                          key={ec.id}
+                          onClick={() => {
+                            setSelectedEndClient(ec);
+                            setModalOpen(true);
+                          }}
+                          className="text-right p-4 bg-muted/30 rounded-xl border border-border hover:border-primary/50 hover:bg-muted/50 transition-all"
+                        >
+                          <p className="font-medium mb-1">{ec.endClientName || ec.name || `לקוח קצה #${ec.id}`}</p>
+                          {endClientsDebtMap[ec.id] != null && (
+                            <p className="text-sm text-muted-foreground">
+                              סך חוב נוכחי: ₪{Number(endClientsDebtMap[ec.id] || 0).toLocaleString('he-IL')}
+                            </p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-10 space-y-4">
+                      <p className="text-muted-foreground">אין לקוחות קצה ללקוח הזה</p>
+                      <Link to="/admin-add-end-customer" state={{ clientId: id, clientName: clientData.name }}>
+                        <Button
+                          variant="primary"
+                          size="md"
+                        >
+                          <User className="w-5 h-5" />
+                          הוסף לקוח קצה
+                        </Button>
+                      </Link>
+                    </div>
+                  )
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Summary for all end clients - separate card below list */}
+            {!endClientsLoading && !endClientsError && endClients && endClients.length > 0 && (
+              <Card padding="lg" className="mt-4">
+                <CardHeader>
+                  <CardTitle className="text-sm">סיכום לקוחות קצה</CardTitle>
+                  <p className="text-xs text-muted-foreground">אינדקציה כללית על כל הלקוחות הקצה של הלקוח</p>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-3 rounded-xl bg-muted/40">
+                      <p className="text-xs text-muted-foreground mb-1">מספר לקוחות קצה</p>
+                      <p className="text-2xl font-semibold">{endClients.length}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-muted/40">
+                      <p className="text-xs text-muted-foreground mb-1">סך חוב נוכחי</p>
+                      <p className="text-2xl font-semibold">
+                        ₪{endClients
+                          .reduce(
+                            (sum, ec) =>
+                              sum + (Number(endClientsDebtMap[ec.id] || 0) || 0),
+                            0
+                          )
+                          .toLocaleString('he-IL')}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-muted/40">
+                      <p className="text-xs text-muted-foreground mb-1">סה"כ שולם עד היום</p>
+                      <p className="text-2xl font-semibold">
+                        ₪{endClients
+                          .reduce((sum, ec) => sum + (Number(ec.totalPaid || ec.paidAmount || 0) || 0), 0)
+                          .toLocaleString('he-IL')}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        )}
+
+        {/* Modal for End Customer Details */}
+        <Modal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          title={selectedEndClient ? `${selectedEndClient.endClientName || selectedEndClient.name}` : ''}
+          size="xl"
+        >
+          {selectedEndClient && (
+            <EndCustomerDetails endClient={selectedEndClient} />
+          )}
+        </Modal>
       </div>
     </div>
   );
 }
 
-
 function InfoRow({ icon: Icon, label, value }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-2.5">
       {Icon && (
-        <div className="w-5 h-5 text-muted-foreground mt-0.5">
-          <Icon className="w-5 h-5" />
+        <div className="w-4 h-4 text-muted-foreground mt-0.5">
+          <Icon className="w-4 h-4" />
         </div>
       )}
       <div className="flex-1">
@@ -243,3 +515,4 @@ function InfoRow({ icon: Icon, label, value }) {
     </div>
   );
 }
+

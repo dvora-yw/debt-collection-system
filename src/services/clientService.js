@@ -8,3 +8,6 @@ export const createClient = (data) => api.post('/clients/add', data);
 export const createContactsForClient = (clientId, contacts) =>
   api.post(`/clients/${clientId}/contacts`, contacts);
 
+export const deleteClient = (clientId) =>
+  api.delete(`/clients/${clientId}`);
+

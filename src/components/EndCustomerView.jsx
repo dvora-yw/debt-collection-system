@@ -24,19 +24,38 @@ export function EndCustomerView() {
   const navigate = useNavigate();
   const [endCustomerData, setEndCustomerData] = useState(null);
   const [persons, setPersons] = useState([]);
+  const [financialSummary, setFinancialSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch end customer details
+        // Fetch end customer details (חובה להצלחת המסך)
         const endCustomerRes = await api.get(`/end-clients/${id}`);
         setEndCustomerData(endCustomerRes.data);
 
-        // Fetch persons for this end customer
-        const personsRes = await api.get(`/persons/by-end-client/${id}`);
-        setPersons(personsRes.data || []);
+        // סיכום פיננסי (יתרה, חיוב מחזורי, חיובים פתוחים, תשלומים)
+        try {
+          const summaryRes = await api.get(`/end-clients/${id}/financial-summary`);
+          setFinancialSummary(summaryRes.data);
+        } catch (summaryErr) {
+          console.warn('Error fetching financial summary for end client:', summaryErr);
+        }
+
+        // Fetch persons for this end customer (רשימת אנשי קשר)
+        try {
+          const personsRes = await api.get(`/persons/by-end-client/${id}`);
+          setPersons(personsRes.data || []);
+        } catch (personsErr) {
+          // אם השרת מחזיר 404 לאנשי קשר – נתייחס כאילו אין אנשי קשר, אבל לא נפיל את כל המסך
+          if (personsErr?.response?.status === 404) {
+            console.warn('No persons found for end-client, treating as empty list');
+            setPersons([]);
+          } else {
+            console.error('Error fetching persons for end client:', personsErr);
+          }
+        }
       } catch (err) {
         console.error('Error fetching end customer data:', err);
         setError('שגיאה בטעינת נתונים');
@@ -58,6 +77,11 @@ export function EndCustomerView() {
     name: endCustomerData.endClientName || endCustomerData.name,
     accountNumber: `EC-${endCustomerData.id}`,
   };
+
+  const balance = financialSummary?.accountBalance;
+  const recurring = financialSummary?.recurring || [];
+  const openCharges = financialSummary?.openCharges || [];
+  const recentPayments = financialSummary?.recentPayments || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-secondary/5 to-background" dir="rtl">
@@ -100,6 +124,60 @@ export function EndCustomerView() {
               </Button>
             </div>
           </div>
+        </Card>
+
+        {/* Financial Summary */}
+        <Card padding="lg" className="mb-6">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>סטטוס תשלומים</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">יתרת זכות</p>
+                <p className="text-lg font-semibold">
+                  {balance ? `₪${Number(balance.balance || 0).toLocaleString('he-IL')}` : '—'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">חיוב מחזורי</p>
+                {recurring.length > 0 ? (
+                  <p className="text-sm">
+                    החל מ־{recurring[0].startDate} כל {recurring[0].intervalValue} {recurring[0].intervalUnit}
+                    {recurring[0].endDate ? ` עד ${recurring[0].endDate}` : ''}
+                  </p>
+                ) : (
+                  <p className="text-sm">אין חיוב מחזורי</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">חיובים פתוחים</p>
+                <p className="text-sm">
+                  {openCharges.length === 0
+                    ? 'אין חיובים פתוחים'
+                    : `${openCharges.length} חיובים בסך ₪${openCharges
+                        .reduce((sum, c) => sum + Number(c.amount || 0), 0)
+                        .toLocaleString('he-IL')}`}
+                </p>
+              </div>
+            </div>
+
+            {recentPayments && recentPayments.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">תשלומים אחרונים</p>
+                <div className="space-y-2">
+                  {recentPayments.map((p) => (
+                    <div key={p.id} className="flex justify-between text-sm">
+                      <span>{p.date}</span>
+                      <span>₪{Number(p.amount || 0).toLocaleString('he-IL')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
         </Card>
 
         {/* Contacts / PERSON Section */}

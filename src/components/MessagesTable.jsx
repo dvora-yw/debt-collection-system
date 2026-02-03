@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import api from '../services/api';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
-import { Button } from './Button';
+import { Pagination } from './Pagination';
 
 export function MessagesTable() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
     let mounted = true;
@@ -38,6 +40,12 @@ export function MessagesTable() {
     </div>
   );
 
+  // Pagination
+  const totalPages = Math.ceil(messages.length / ITEMS_PER_PAGE);
+  const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIdx = startIdx + ITEMS_PER_PAGE;
+  const paginatedMessages = messages.slice(startIdx, endIdx);
+
   return (
     <div dir="rtl" className="p-4 lg:p-8">
       <h1 className="text-2xl font-bold mb-4">הודעות</h1>
@@ -49,7 +57,7 @@ export function MessagesTable() {
 
         <CardContent>
           <div className="divide-y">
-            {messages.map((msg) => (
+            {paginatedMessages.map((msg) => (
               <div key={msg.id} className="py-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-sm">
@@ -71,6 +79,14 @@ export function MessagesTable() {
               <p className="py-4 text-muted-foreground">אין הודעות להצגה</p>
             )}
           </div>
+
+          {messages.length > ITEMS_PER_PAGE && (
+            <Pagination 
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
+          )}
         </CardContent>
       </Card>
     </div>

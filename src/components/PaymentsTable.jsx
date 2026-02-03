@@ -5,6 +5,7 @@ import { Badge } from './Badge';
 import { Button } from './Button';
 import { Input } from './Input';
 import { Select } from './Select';
+import { Pagination } from './Pagination';
 import {
   Table,
   TableHeader,
@@ -30,7 +31,8 @@ import {
 export function PaymentsTable({ visibleColumns = ['all'] }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +58,11 @@ export function PaymentsTable({ visibleColumns = ['all'] }) {
     return () => { mounted = false; };
   }, []);
 
+  // Reset to page 1 when filter changes - must be before conditional returns
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center">טוען תשלומים...</div>;
   if (error) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -72,12 +79,18 @@ export function PaymentsTable({ visibleColumns = ['all'] }) {
       !q ||
       (payment.client || '').toLowerCase().includes(q) ||
       (payment.customerName || '').toLowerCase().includes(q) ||
-      (payment.id || '').toLowerCase().includes(q) ||
+      (String(payment.id) || '').toLowerCase().includes(q) ||
       (payment.invoiceNumber || '').toLowerCase().includes(q) ||
       (payment.reference || '').toLowerCase().includes(q);
     const matchesStatus = statusFilter === 'all' || (payment.status || '') === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredPayments.length / ITEMS_PER_PAGE);
+  const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIdx = startIdx + ITEMS_PER_PAGE;
+  const paginatedPayments = filteredPayments.slice(startIdx, endIdx);
 
   const parseAmount = (amt) => {
     if (amt == null) return 0;
@@ -141,7 +154,11 @@ export function PaymentsTable({ visibleColumns = ['all'] }) {
 
   const totalAmount = filteredPayments
     .filter((p) => p.status === 'completed')
-    .reduce((sum, p) => sum + parseFloat(p.amount.replace('₪', '').replace(',', '')), 0);
+    .reduce((sum, p) => {
+      if (!p.amount) return sum;
+      const amount = typeof p.amount === 'string' ? p.amount.replace('₪', '').replace(',', '') : p.amount;
+      return sum + (parseFloat(amount) || 0);
+    }, 0);
 
   return (
     <Card padding="lg">
@@ -153,8 +170,7 @@ export function PaymentsTable({ visibleColumns = ['all'] }) {
               סה"כ {filteredPayments.length} תשלומים | סכום מאושר: ₪{totalAmount.toLocaleString()}
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1 sm:w-64">
+          <div className="relative flex-1 sm:w-64">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
                 placeholder="חיפוש תשלום..."
@@ -163,6 +179,8 @@ export function PaymentsTable({ visibleColumns = ['all'] }) {
                 className="pr-10"
               />
             </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            
             <Select
               options={[
                 { value: 'all', label: 'כל הסטטוסים' },
@@ -217,7 +235,7 @@ export function PaymentsTable({ visibleColumns = ['all'] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPayments.map((payment) => (
+              {paginatedPayments.map((payment) => (
                 <TableRow key={payment.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -291,6 +309,14 @@ export function PaymentsTable({ visibleColumns = ['all'] }) {
             <CreditCard className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
             <p className="text-muted-foreground">לא נמצאו תשלומים התואמים לחיפוש</p>
           </div>
+        )}
+
+        {filteredPayments.length > ITEMS_PER_PAGE && (
+          <Pagination 
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+          />
         )}
       </CardContent>
     </Card>
