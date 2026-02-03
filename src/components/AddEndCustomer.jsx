@@ -1,13 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from './Card';
 import { Input } from './Input';
 import { Select } from './Select';
 import { Button } from './Button';
-import { ArrowRight, Save, UserPlus, Upload, X, Plus } from 'lucide-react';
+import { ArrowRight, Save, UserPlus, X, Plus } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from './AuthContext';
-import * as XLSX from 'xlsx';
 import {
   validateName,
   validatePhone,
@@ -19,7 +18,7 @@ import {
 export function AddEndCustomer() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const fileInputRef = useRef(null);
+  // const fileInputRef = useRef(null);
   
   const [formData, setFormData] = useState({
     name: "",
