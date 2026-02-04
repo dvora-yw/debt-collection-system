@@ -1,7 +1,9 @@
 import axios from "axios";
 
+const API_URL = process.env.REACT_APP_API_URL;
+
 const api = axios.create({
-  baseURL: "http://localhost:8081/api",
+  baseURL: API_URL,
 });
 
 // הוספת interceptor שמוסיף את ה-token לכל בקשה
